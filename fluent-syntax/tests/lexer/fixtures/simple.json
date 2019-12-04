@@ -1,8 +1,8 @@
 [
     CommentSign,
     Text(
-        1,
-        2..53,
+        0,
+        1..53,
     ),
     Eol,
     Identifier(

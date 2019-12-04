@@ -1,30 +1,30 @@
 [
     CommentSign,
     Text(
-        1,
-        2..69,
+        0,
+        1..69,
     ),
     CommentSign,
     Text(
-        1,
-        72..139,
+        0,
+        71..139,
     ),
     CommentSign,
     Text(
-        1,
-        142..198,
+        0,
+        141..198,
     ),
     Eol,
     GroupCommentSign,
     Text(
-        1,
-        203..244,
+        0,
+        202..244,
     ),
     Eol,
     GroupCommentSign,
     Text(
-        1,
-        249..258,
+        0,
+        248..258,
     ),
     Eol,
     Identifier(
@@ -155,13 +155,13 @@
     Eol,
     CommentSign,
     Text(
-        1,
-        566..643,
+        0,
+        565..643,
     ),
     CommentSign,
     Text(
-        1,
-        646..704,
+        0,
+        645..704,
     ),
     Identifier(
         705..722,
@@ -431,8 +431,8 @@
     Eol,
     GroupCommentSign,
     Text(
-        1,
-        1362..1371,
+        0,
+        1361..1371,
     ),
     Eol,
     Identifier(
@@ -738,8 +738,8 @@
     Eol,
     GroupCommentSign,
     Text(
-        1,
-        2060..2069,
+        0,
+        2059..2069,
     ),
     Eol,
     Identifier(
@@ -1115,13 +1115,13 @@
     Eol,
     GroupCommentSign,
     Text(
-        1,
-        3006..3026,
+        0,
+        3005..3026,
     ),
     GroupCommentSign,
     Text(
-        1,
-        3030..3094,
+        0,
+        3029..3094,
     ),
     CommentSign,
     Text(
@@ -1256,8 +1256,8 @@
     Eol,
     GroupCommentSign,
     Text(
-        1,
-        3463..3475,
+        0,
+        3462..3475,
     ),
     Eol,
     Identifier(
@@ -1393,8 +1393,8 @@
     Eol,
     GroupCommentSign,
     Text(
-        1,
-        3919..3933,
+        0,
+        3918..3933,
     ),
     Eol,
     Identifier(
@@ -1500,8 +1500,8 @@
     Eol,
     GroupCommentSign,
     Text(
-        1,
-        4259..4269,
+        0,
+        4258..4269,
     ),
     Eol,
     Identifier(
@@ -2157,8 +2157,8 @@
     Eol,
     CommentSign,
     Text(
-        1,
-        6163..6204,
+        0,
+        6162..6204,
     ),
     Eol,
     Identifier(
@@ -2190,8 +2190,8 @@
     Eol,
     GroupCommentSign,
     Text(
-        1,
-        6290..6303,
+        0,
+        6289..6303,
     ),
     Eol,
     Identifier(
@@ -2289,8 +2289,8 @@
     Eol,
     CommentSign,
     Text(
-        1,
-        6563..6612,
+        0,
+        6562..6612,
     ),
     Eol,
     MinusSign,
