@@ -32,9 +32,11 @@ fn parser_bench(c: &mut Criterion) {
     c.bench_function_over_inputs(
         "parser_bench",
         move |b, &name| {
-            let source = &ftl_strings[name];
+            // let source = &ftl_strings[name];
             b.iter(|| {
-                let parser = Parser::new(source);
+                let path = format!("./benches/{}.ftl", name);
+                let source = read_file(&path).unwrap();
+                let parser = Parser::new(&source);
                 let ast = parser.parse();
             });
         },

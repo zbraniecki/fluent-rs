@@ -1,17 +1,21 @@
+use fallible_iterator::FallibleIterator;
+use std::io::Bytes;
+use std::iter::Enumerate;
+use std::iter::Peekable;
 use std::ops::Range;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Token {
-    Identifier(Range<usize>),
+    Identifier(String),
     EqSign,
     CommentSign,
-    GroupCommentSign,
-    ResourceCommentSign,
+    // GroupCommentSign,
+    // ResourceCommentSign,
     Eol,
     Eot, // End Of Text
-    Dot,
-    MinusSign,
-    Text(usize, Range<usize>),
+    // Dot,
+    // MinusSign,
+    Text(usize, String),
 }
 
 #[derive(Debug, PartialEq)]
@@ -29,229 +33,181 @@ pub enum NextLine {
     NewEntry,
 }
 
-pub struct Lexer<'l> {
-    pub state: LexerState,
-    pub source: &'l [u8],
-    pub length: usize,
-    pub ptr: usize,
-    pub buffer: Option<Token>,
+pub enum Buffer {
+    Token(Token),
+    Byte(u8),
 }
 
-impl<'l> Lexer<'l> {
-    pub fn new(source: &'l [u8]) -> Self {
-        let length = source.len();
+type LexerResult<R> = Result<R, std::io::Error>;
+type LexerMaybeResult<R> = Result<Option<R>, std::io::Error>;
+
+pub struct Lexer<R>
+where
+    R: std::io::Read,
+{
+    pub state: LexerState,
+    pub source: Bytes<R>,
+    pub buffer: Option<Buffer>,
+}
+
+impl<R> Lexer<R>
+where
+    R: std::io::Read,
+{
+    pub fn new(source: Bytes<R>) -> Self {
         Lexer {
             state: LexerState::Resource,
             source,
-            length,
-            ptr: 0,
-            buffer: None
+            buffer: None,
         }
     }
 
-    fn get_ident(&mut self) -> Token {
-        let start = self.ptr;
-        self.ptr += 1;
-        while let Some(cc) = self.source.get(self.ptr) {
-            if !cc.is_ascii_alphanumeric() && *cc != b'-' && *cc != b'_' {
+    fn get_ident(&mut self, b: u8) -> LexerResult<Token> {
+        let mut buffer = vec![b];
+        while let Some(b) = self.source.next() {
+            let b = b?;
+            if !b.is_ascii_alphanumeric() {
+                self.buffer = Some(Buffer::Byte(b));
                 break;
             }
-            self.ptr += 1;
+            buffer.push(b);
         }
-        Token::Identifier(start..self.ptr)
+        Ok(Token::Identifier(String::from_utf8(buffer).unwrap()))
     }
 
-    fn tokenize_resource(&mut self, cc: u8) -> Token {
-        match cc {
-            b'-' => {
-                self.ptr += 1;
-                Token::MinusSign
-            },
+    fn tokenize_resource(&mut self, b: u8) -> LexerMaybeResult<Token> {
+        match b {
             b'#' => {
-                let start = self.ptr;
-                self.ptr += 1;
-                while let Some(b'#') = self.source.get(self.ptr) {
-                    self.ptr += 1;
-                }
                 self.state = LexerState::Comment;
-                match self.ptr - start {
-                    1 => return Token::CommentSign,
-                    2 => return Token::GroupCommentSign,
-                    3 => return Token::ResourceCommentSign,
-                    _ => panic!(),
-                }
-            },
-            b'\n' => {
-                self.ptr += 1;
-                return Token::Eol;
-            },
+                Ok(Some(Token::CommentSign))
+            }
             b if b.is_ascii_alphabetic() => {
                 self.state = LexerState::Message;
-                self.get_ident()
-            },
-            _ => {
-                panic!();
+                Ok(Some(self.get_ident(b)?))
             }
+            b'\n' => Ok(Some(Token::Eol)),
+            _ => panic!(),
         }
     }
 
-    fn tokenize_message(&mut self, cc: u8) -> Option<Token> {
-        if cc == b' ' {
-            self.ptr += 1;
+    fn tokenize_message(&mut self, b: u8) -> LexerMaybeResult<Token> {
+        let mut b = b;
+        while b == b' ' {
+            b = match self.maybe_take()? {
+                Some(b) => b,
+                None => return Ok(None),
+            };
         }
 
-        while let Some(cc) = self.source.get(self.ptr) {
-            if *cc == b' ' {
-                self.ptr += 1;
-                continue;
+        match b {
+            b'=' => {
+                self.state = LexerState::Pattern;
+                return Ok(Some(Token::EqSign));
             }
-
-            match self.source.get(self.ptr) {
-                Some(b'=') => {
-                    self.state = LexerState::Pattern;
-                    self.ptr += 1;
-                    return Some(Token::EqSign);
-                },
-                Some(b'a' ..= b'z') => {
-                    return Some(self.get_ident());
-                },
-                None => return None,
-                _ => {
-                    // println!("{:#}", self.source[self.ptr]);
-                    panic!()
-                },
-            }
+            _ => panic!(),
         }
-        None
     }
 
-    fn tokenize_pattern(&mut self, cc: u8) -> Option<Token> {
-        let indent_start = self.ptr;
-        let mut in_indent = true;
-        let mut start = self.ptr;
+    fn tokenize_pattern(&mut self, b: u8) -> LexerResult<Token> {
         let mut indent = 0;
+        let mut in_indent = true;
 
-        if cc == b' ' {
-            self.ptr += 1;
+        let mut b = Some(b);
+        while b == Some(b' ') {
+            indent += 1;
+            b = self.maybe_take()?;
         }
 
-        while let Some(cc) = self.source.get(self.ptr) {
-            if in_indent {
-                if *cc == b' ' {
-                    self.ptr += 1;
-                    continue;
-                } else {
-                    start = self.ptr;
-                    indent = start - indent_start;
-                    in_indent = false;
+        let mut buffer = vec![];
+
+        loop {
+            match b {
+                Some(b'\n') => {
+                    break;
+                }
+                Some(cc) => {
+                    buffer.push(cc);
+                    b = self.maybe_take()?;
+                }
+                None => {
+                    break;
                 }
             }
-            match cc {
-                b'\n' if start == self.ptr => {
-                    self.ptr += 1;
-                    match self.check_next_line() {
-                        NextLine::TextContinuation => return Some(Token::Eol),
-                        NextLine::Attribute => {
-                            self.state = LexerState::Message;
-                            self.buffer = Some(Token::Dot);
-                            self.ptr += 1;
-                            return Some(Token::Eot);
-                        },
-                        NextLine::NewEntry => {
-                            self.state = LexerState::Resource;
-                            return Some(Token::Eot);
-                        }
-                    }
-                }
-                b'\n' => {
-                    return Some(Token::Text(indent, start..self.ptr));
-                }
-                _ => {}
-            }
-            self.ptr += 1;
         }
-        None
+        self.buffer = Some(Buffer::Token(Token::Eot));
+        self.state = LexerState::Resource;
+        return Ok(Token::Text(indent, String::from_utf8(buffer).unwrap()));
     }
 
-    fn tokenize_comment(&mut self, cc: u8) -> Option<Token> {
-        if cc != b' ' {
-            if cc != b'\n' {
+    fn tokenize_comment(&mut self, b: u8) -> LexerResult<Token> {
+        if b != b' ' {
+            if b != b'\n' {
                 panic!();
             }
             self.state = LexerState::Resource;
-            self.ptr += 1;
-            return Some(Token::Text(0, self.ptr - 1..self.ptr - 1));
+            return Ok(Token::Text(0, String::new()));
         }
 
-        self.ptr += 1;
+        let mut buffer = vec![b];
 
-        let start = self.ptr;
-
-        while let Some(cc) = self.source.get(self.ptr) {
-            self.ptr += 1;
-            if *cc == b'\n' {
-                break;
+        loop {
+            match self.maybe_take()? {
+                Some(b'\n') => {
+                    break;
+                }
+                Some(b) => {
+                    buffer.push(b);
+                }
+                None => {
+                    break;
+                }
             }
         }
         self.state = LexerState::Resource;
-        Some(Token::Text(0, start..self.ptr - 1))
+        Ok(Token::Text(0, String::from_utf8(buffer).unwrap()))
     }
 
-    fn check_next_line(&mut self) -> NextLine {
-        let indent_start = self.ptr;
-
-        while let Some(cc) = self.source.get(self.ptr) {
-            if *cc != b' ' {
-                break;
-            }
-            self.ptr += 1;
+    fn consume(&mut self, b: u8) -> LexerMaybeResult<Token> {
+        match self.state {
+            LexerState::Resource => self.tokenize_resource(b),
+            LexerState::Message => self.tokenize_message(b),
+            LexerState::Pattern => Ok(Some(self.tokenize_pattern(b)?)),
+            LexerState::Comment => Ok(Some(self.tokenize_comment(b)?)),
+            _ => panic!(),
         }
+    }
 
-        let start = self.ptr;
-        let indent = start - indent_start;
-
-        if indent == 0 {
-            return NextLine::NewEntry;
-        }
-
-        match self.source.get(self.ptr) {
-            Some(b'.') => {
-                NextLine::Attribute
-            }
-            _ => NextLine::TextContinuation,
+    fn maybe_take(&mut self) -> LexerMaybeResult<u8> {
+        match self.source.next() {
+            Some(Ok(b)) => Ok(Some(b)),
+            Some(Err(err)) => Err(err),
+            None => Ok(None),
         }
     }
 }
 
-impl<'l> Iterator for Lexer<'l> {
+impl<R> FallibleIterator for Lexer<R>
+where
+    R: std::io::Read,
+{
     type Item = Token;
+    type Error = std::io::Error;
 
-    // fn next(&mut self) -> Option<Self::Item> {
-    //     if self.buffer.is_some() {
-    //         return dbg!(self.buffer.take());
-    //     }
-    //     self.source.get(self.ptr).and_then(|cc| {
-    //         let result = match self.state {
-    //             LexerState::Resource => Some(self.tokenize_resource(*cc)),
-    //             LexerState::Message => self.tokenize_message(*cc),
-    //             LexerState::Pattern => self.tokenize_pattern(*cc),
-    //             LexerState::Comment => self.tokenize_comment(*cc),
-    //         };
-    //         dbg!(result)
-    //     })
-    // }
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.buffer.is_some() {
-            return self.buffer.take();
-        }
-        self.source.get(self.ptr).and_then(|cc| {
-            match self.state {
-                LexerState::Resource => Some(self.tokenize_resource(*cc)),
-                LexerState::Message => self.tokenize_message(*cc),
-                LexerState::Pattern => self.tokenize_pattern(*cc),
-                LexerState::Comment => self.tokenize_comment(*cc),
+    fn next(&mut self) -> Result<Option<Self::Item>, Self::Error> {
+        let x = match self.buffer.take() {
+            Some(Buffer::Token(token)) => {
+                return Ok(Some(token));
             }
-        })
+            Some(Buffer::Byte(b)) => self.consume(b),
+            None => {
+                let byte = self.source.next();
+                match byte {
+                    Some(Ok(b)) => self.consume(b),
+                    Some(Err(err)) => Err(err),
+                    None => Ok(None),
+                }
+            }
+        };
+        dbg!(x)
     }
 }

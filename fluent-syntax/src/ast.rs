@@ -1,55 +1,55 @@
 #[derive(Debug, PartialEq)]
-pub struct Resource<'ast> {
-    pub body: Box<[ResourceEntry<'ast>]>,
+pub struct Resource {
+    pub body: Box<[ResourceEntry]>,
 }
 
 #[derive(Debug, PartialEq)]
-pub enum ResourceEntry<'ast> {
-    Entry(Entry<'ast>),
+pub enum ResourceEntry {
+    Entry(Entry),
 }
 
 #[derive(Debug, PartialEq)]
-pub enum Entry<'ast> {
-    Message(Message<'ast>),
-    Term(Term<'ast>),
-    Comment(Comment<'ast>),
+pub enum Entry {
+    Message(Message),
+    Term(Term),
+    Comment(Comment),
 }
 
 #[derive(Debug, PartialEq)]
-pub struct Message<'ast> {
-    pub id: Identifier<'ast>,
-    pub value: Option<Pattern<'ast>>,
-    pub attributes: Box<[Attribute<'ast>]>,
-    pub comment: Option<Comment<'ast>>,
+pub struct Message {
+    pub id: Identifier,
+    pub value: Option<Pattern>,
+    pub attributes: Box<[Attribute]>,
+    pub comment: Option<Comment>,
 }
 
 #[derive(Debug, PartialEq)]
-pub struct Term<'ast> {
-    pub id: Identifier<'ast>,
-    pub value: Pattern<'ast>,
-    pub attributes: Box<[Attribute<'ast>]>,
-    pub comment: Option<Comment<'ast>>,
+pub struct Term {
+    pub id: Identifier,
+    pub value: Pattern,
+    pub attributes: Box<[Attribute]>,
+    pub comment: Option<Comment>,
 }
 
 #[derive(Debug, PartialEq)]
-pub struct Pattern<'ast> {
-    pub elements: Box<[PatternElement<'ast>]>,
+pub struct Pattern {
+    pub elements: Box<[PatternElement]>,
 }
 
 #[derive(Debug, PartialEq)]
-pub enum PatternElement<'ast> {
-    TextElement(&'ast str),
+pub enum PatternElement {
+    TextElement(String),
 }
 
 #[derive(Debug, PartialEq)]
-pub struct Attribute<'ast> {
-    pub id: Identifier<'ast>,
-    pub value: Pattern<'ast>,
+pub struct Attribute {
+    pub id: Identifier,
+    pub value: Pattern,
 }
 
 #[derive(Debug, PartialEq)]
-pub struct Identifier<'ast> {
-    pub name: &'ast str,
+pub struct Identifier {
+    pub name: String,
 }
 
 #[derive(Debug, PartialEq)]
@@ -60,7 +60,7 @@ pub enum CommentType {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct Comment<'ast> {
+pub struct Comment {
     pub comment_type: CommentType,
-    pub content: Box<[&'ast str]>,
+    pub content: Box<[String]>,
 }

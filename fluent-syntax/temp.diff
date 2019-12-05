@@ -1,0 +1,367 @@
+diff --git a/fluent-syntax/src/parser/lexer.rs b/fluent-syntax/src/parser/lexer.rs
+index 4fdf777..f5f443c 100644
+--- a/fluent-syntax/src/parser/lexer.rs
++++ b/fluent-syntax/src/parser/lexer.rs
+@@ -15,7 +15,7 @@ pub enum Token {
+ }
+ 
+ #[derive(Debug, PartialEq)]
+-pub enum LexerState {
++enum LexerState {
+     Resource,
+     Message, // Or Term
+     Pattern,
+@@ -23,35 +23,31 @@ pub enum LexerState {
+ }
+ 
+ #[derive(Debug, PartialEq)]
+-pub enum NextLine {
++enum NextLine {
+     TextContinuation,
+     Attribute,
+     NewEntry,
+ }
+ 
+ pub struct Lexer<'l> {
+-    pub state: LexerState,
+-    pub source: &'l [u8],
+-    pub length: usize,
+-    pub ptr: usize,
+-    pub buffer: Option<Token>,
++    state: LexerState,
++    source: &'l [u8],
++    ptr: usize,
++    buffer: Option<Token>,
+ }
+ 
+ impl<'l> Lexer<'l> {
+     pub fn new(source: &'l [u8]) -> Self {
+-        let length = source.len();
+         Lexer {
+             state: LexerState::Resource,
+             source,
+-            length,
+             ptr: 0,
+             buffer: None
+         }
+     }
+ 
+     fn get_ident(&mut self) -> Token {
+-        let start = self.ptr;
+-        self.ptr += 1;
++        let start = self.ptr - 1;
+         while let Some(cc) = self.source.get(self.ptr) {
+             if !cc.is_ascii_alphanumeric() && *cc != b'-' && *cc != b'_' {
+                 break;
+@@ -62,30 +58,29 @@ impl<'l> Lexer<'l> {
+     }
+ 
+     fn tokenize_resource(&mut self, cc: u8) -> Token {
++        self.ptr += 1;
+         match cc {
+             b'-' => {
+-                self.ptr += 1;
+                 Token::MinusSign
+             },
+             b'#' => {
+-                let start = self.ptr;
+-                self.ptr += 1;
+-                while let Some(b'#') = self.source.get(self.ptr) {
+-                    self.ptr += 1;
+-                }
+                 self.state = LexerState::Comment;
+-                match self.ptr - start {
+-                    1 => return Token::CommentSign,
+-                    2 => return Token::GroupCommentSign,
+-                    3 => return Token::ResourceCommentSign,
+-                    _ => panic!(),
++                if let Some(b'#') = self.source.get(self.ptr) {
++                    self.ptr += 1;
++                    if let Some(b'#') = self.source.get(self.ptr) {
++                        self.ptr += 1;
++                        Token::ResourceCommentSign
++                    } else {
++                        Token::GroupCommentSign
++                    }
++                } else {
++                    Token::CommentSign
+                 }
+             },
+             b'\n' => {
+-                self.ptr += 1;
+-                return Token::Eol;
++                Token::Eol
+             },
+-            b if b.is_ascii_alphabetic() => {
++            b'a' ..= b'z' => {
+                 self.state = LexerState::Message;
+                 self.get_ident()
+             },
+@@ -113,6 +108,7 @@ impl<'l> Lexer<'l> {
+                     return Some(Token::EqSign);
+                 },
+                 Some(b'a' ..= b'z') => {
++                    self.ptr += 1;
+                     return Some(self.get_ident());
+                 },
+                 None => return None,
+@@ -173,6 +169,47 @@ impl<'l> Lexer<'l> {
+         None
+     }
+ 
++    fn _tokenize_pattern(&mut self, cc: u8) -> Option<Token> {
++        let indent_start = self.ptr;
++
++        if cc == b' ' {
++            self.ptr += 1;
++        }
++
++        while let Some(b' ') = self.source.get(self.ptr) {
++            self.ptr += 1;
++        }
++
++        let indent = self.ptr - indent_start;
++        let start = self.ptr;
++
++        while let Some(cc) = self.source.get(self.ptr) {
++            match cc {
++                b'\n' => {
++                    self.ptr += 1;
++                    match self.check_next_line() {
++                        NextLine::TextContinuation => {
++                            return Some(Token::Text(indent, start..self.ptr - 1));
++                        }
++                        NextLine::Attribute => {
++                            self.state = LexerState::Message;
++                            self.buffer = Some(Token::Dot);
++                            self.ptr += 1;
++                            return Some(Token::Text(indent, start..self.ptr - 1));
++                        },
++                        NextLine::NewEntry => {
++                            self.state = LexerState::Resource;
++                            return Some(Token::Text(indent, start..self.ptr - 1));
++                        }
++                    }
++                }
++                _ => {}
++            }
++            self.ptr += 1;
++        }
++        None
++    }
++
+     fn tokenize_comment(&mut self, cc: u8) -> Option<Token> {
+         if cc != b' ' {
+             if cc != b'\n' {
+diff --git a/fluent-syntax/src/parser/parser.rs b/fluent-syntax/src/parser/parser.rs
+index 880866d..5e9638a 100644
+--- a/fluent-syntax/src/parser/parser.rs
++++ b/fluent-syntax/src/parser/parser.rs
+@@ -112,17 +112,11 @@ impl<'p> Parser<'p> {
+                     let te = ast::PatternElement::TextElement(&self.source[r]);
+                     pe.push(te);
+                 }
+-                Some(Token::Eol) => {}
+-                Some(Token::Eot) => {
+-                    break;
+-                }
++                Some(Token::Eot) => break,
+                 None => {
+                     break;
+                 }
+-                b => {
+-                    println!("{:#?}", b);
+-                    panic!();
+-                }
++                _ => break
+             }
+         }
+         if pe.is_empty() {
+@@ -142,13 +136,11 @@ impl<'p> Parser<'p> {
+                     let te = ast::PatternElement::TextElement(&self.source[r]);
+                     pe.push(te);
+                 }
+-                Some(Token::Eot) => {
+-                    break;
+-                }
++                Some(Token::Eot) => break,
+                 None => {
+                     break;
+                 }
+-                _ => panic!(),
++                _ => break,
+             }
+         }
+         ast::Pattern {
+diff --git a/fluent-syntax/tests/ast/mod.rs b/fluent-syntax/tests/ast/mod.rs
+index f76fc23..1aed096 100644
+--- a/fluent-syntax/tests/ast/mod.rs
++++ b/fluent-syntax/tests/ast/mod.rs
+@@ -194,7 +194,12 @@ where
+ #[serde(remote = "ast::Attribute")]
+ #[serde(tag = "type")]
+ #[serde(rename = "Attribute")]
+-pub struct AttributeDef {}
++pub struct AttributeDef<'s> {
++    #[serde(with = "IdentifierDef")]
++    pub id: ast::Identifier<'s>,
++    #[serde(with = "PatternDef")]
++    pub value: ast::Pattern<'s>,
++}
+ 
+ #[derive(Serialize)]
+ #[serde(remote = "ast::Identifier")]
+diff --git a/fluent-syntax/tests/lexer/fixtures/menubar.json b/fluent-syntax/tests/lexer/fixtures/menubar.json
+index 03106a9..818a8b3 100644
+--- a/fluent-syntax/tests/lexer/fixtures/menubar.json
++++ b/fluent-syntax/tests/lexer/fixtures/menubar.json
+@@ -2,29 +2,29 @@
+     CommentSign,
+     Text(
+         0,
+-        1..69,
++        2..69,
+     ),
+     CommentSign,
+     Text(
+         0,
+-        71..139,
++        72..139,
+     ),
+     CommentSign,
+     Text(
+         0,
+-        141..198,
++        142..198,
+     ),
+     Eol,
+     GroupCommentSign,
+     Text(
+         0,
+-        202..244,
++        203..244,
+     ),
+     Eol,
+     GroupCommentSign,
+     Text(
+         0,
+-        248..258,
++        249..258,
+     ),
+     Eol,
+     Identifier(
+@@ -156,12 +156,12 @@
+     CommentSign,
+     Text(
+         0,
+-        565..643,
++        566..643,
+     ),
+     CommentSign,
+     Text(
+         0,
+-        645..704,
++        646..704,
+     ),
+     Identifier(
+         705..722,
+@@ -432,7 +432,7 @@
+     GroupCommentSign,
+     Text(
+         0,
+-        1361..1371,
++        1362..1371,
+     ),
+     Eol,
+     Identifier(
+@@ -739,7 +739,7 @@
+     GroupCommentSign,
+     Text(
+         0,
+-        2059..2069,
++        2060..2069,
+     ),
+     Eol,
+     Identifier(
+@@ -1116,12 +1116,12 @@
+     GroupCommentSign,
+     Text(
+         0,
+-        3005..3026,
++        3006..3026,
+     ),
+     GroupCommentSign,
+     Text(
+         0,
+-        3029..3094,
++        3030..3094,
+     ),
+     CommentSign,
+     Text(
+@@ -1257,7 +1257,7 @@
+     GroupCommentSign,
+     Text(
+         0,
+-        3462..3475,
++        3463..3475,
+     ),
+     Eol,
+     Identifier(
+@@ -1394,7 +1394,7 @@
+     GroupCommentSign,
+     Text(
+         0,
+-        3918..3933,
++        3919..3933,
+     ),
+     Eol,
+     Identifier(
+@@ -1501,7 +1501,7 @@
+     GroupCommentSign,
+     Text(
+         0,
+-        4258..4269,
++        4259..4269,
+     ),
+     Eol,
+     Identifier(
+@@ -2158,7 +2158,7 @@
+     CommentSign,
+     Text(
+         0,
+-        6162..6204,
++        6163..6204,
+     ),
+     Eol,
+     Identifier(
+@@ -2191,7 +2191,7 @@
+     GroupCommentSign,
+     Text(
+         0,
+-        6289..6303,
++        6290..6303,
+     ),
+     Eol,
+     Identifier(
+@@ -2290,7 +2290,7 @@
+     CommentSign,
+     Text(
+         0,
+-        6562..6612,
++        6563..6612,
+     ),
+     Eol,
+     MinusSign,
+diff --git a/fluent-syntax/tests/lexer/fixtures/simple.json b/fluent-syntax/tests/lexer/fixtures/simple.json
+index 686e452..0a43094 100644
+--- a/fluent-syntax/tests/lexer/fixtures/simple.json
++++ b/fluent-syntax/tests/lexer/fixtures/simple.json
+@@ -2,7 +2,7 @@
+     CommentSign,
+     Text(
+         0,
+-        1..53,
++        2..53,
+     ),
+     Eol,
+     Identifier(
