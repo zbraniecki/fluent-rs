@@ -244,9 +244,28 @@ pub struct IdentifierDef<'s> {
 #[derive(Serialize)]
 #[serde(remote = "ast::Expression")]
 #[serde(tag = "type")]
-pub enum ExpressionDef<'ast> {
+pub enum ExpressionDef<'s> {
     #[serde(with = "InlineExpressionDef")]
-    InlineExpression(ast::InlineExpression<'ast>),
+    InlineExpression(ast::InlineExpression<'s>),
+    SelectExpression {
+        #[serde(with = "InlineExpressionDef")]
+        selector: ast::InlineExpression<'s>,
+        #[serde(serialize_with = "serialize_variant_list")]
+        variants: Box<[ast::Variant<'s>]>,
+    },
+}
+
+fn serialize_variant_list<S>(v: &Box<[ast::Variant]>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    #[derive(Serialize)]
+    struct Helper<'s>(#[serde(with = "VariantDef")] &'s ast::Variant<'s>);
+    let mut seq = serializer.serialize_seq(Some(v.len()))?;
+    for e in v.iter() {
+        seq.serialize_element(&Helper(e))?;
+    }
+    seq.end()
 }
 
 #[derive(Serialize)]
@@ -258,6 +277,12 @@ pub enum InlineExpressionDef<'s> {
     },
     NumberLiteral {
         value: &'s str,
+    },
+    FunctionReference {
+        #[serde(with = "IdentifierDef")]
+        id: ast::Identifier<'s>,
+        #[serde(serialize_with = "serialize_call_arguments_option")]
+        arguments: Option<ast::CallArguments<'s>>,
     },
     MessageReference {
         #[serde(with = "IdentifierDef")]
@@ -272,6 +297,14 @@ pub enum InlineExpressionDef<'s> {
         attribute: Option<ast::Identifier<'s>>,
         #[serde(serialize_with = "serialize_call_arguments_option")]
         arguments: Option<ast::CallArguments<'s>>,
+    },
+    VariableReference {
+        #[serde(with = "IdentifierDef")]
+        id: ast::Identifier<'s>,
+    },
+    Placeable {
+        #[serde(with = "ExpressionDef")]
+        expression: ast::Expression<'s>,
     },
 }
 
@@ -351,4 +384,25 @@ where
         seq.serialize_element(&Helper(e))?;
     }
     seq.end()
+}
+
+#[derive(Serialize)]
+#[serde(remote = "ast::Variant")]
+#[serde(tag = "type")]
+#[serde(rename = "Variant")]
+pub struct VariantDef<'s> {
+    #[serde(with = "VariantKeyDef")]
+    pub key: ast::VariantKey<'s>,
+    #[serde(with = "PatternDef")]
+    pub value: ast::Pattern<'s>,
+    pub default: bool,
+}
+
+#[derive(Serialize)]
+#[serde(remote = "ast::VariantKey")]
+#[serde(tag = "type")]
+#[serde(rename = "VariantKey")]
+pub enum VariantKeyDef<'s> {
+    Identifier { name: &'s str },
+    NumberLiteral { value: &'s str },
 }

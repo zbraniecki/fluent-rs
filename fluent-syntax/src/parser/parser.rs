@@ -101,9 +101,10 @@ impl<'p> Parser<'p> {
         let pattern = self.maybe_get_pattern()?;
 
         let mut attributes = vec![];
-        while self.lexer.take_if(Token::Dot)? {
-            attributes.push(self.get_attribute()?);
-        }
+        let err = match self.get_attributes(&mut attributes) {
+            Ok(()) => None,
+            Err(err) => Some(err),
+        };
 
         if pattern.is_none() && attributes.is_empty() {
             return Err(ParserError::Unknown);
@@ -118,7 +119,11 @@ impl<'p> Parser<'p> {
                     comment: self.last_comment.take(),
                 },
             )));
-        Ok(())
+        if let Some(err) = err {
+            Err(err)
+        } else {
+            Ok(())
+        }
     }
 
     fn add_term(&mut self) -> ParserResult<()> {
@@ -129,9 +134,10 @@ impl<'p> Parser<'p> {
         let pattern = self.get_pattern()?;
 
         let mut attributes = vec![];
-        while self.lexer.take_if(Token::Dot)? {
-            attributes.push(self.get_attribute()?);
-        }
+        let err = match self.get_attributes(&mut attributes) {
+            Ok(()) => None,
+            Err(err) => Some(err),
+        };
 
         self.body
             .push(ast::ResourceEntry::Entry(ast::Entry::Term(ast::Term {
@@ -140,7 +146,11 @@ impl<'p> Parser<'p> {
                 attributes: attributes.into_boxed_slice(),
                 comment: self.last_comment.take(),
             })));
-        Ok(())
+        if let Some(err) = err {
+            Err(err)
+        } else {
+            Ok(())
+        }
     }
 
     fn maybe_get_pattern(&mut self) -> ParserResult<Option<ast::Pattern<'p>>> {
@@ -166,8 +176,10 @@ impl<'p> Parser<'p> {
                     _ => return Err(ParserError::Unknown),
                 },
                 Some(Token::Eol(eols)) => {
-                    for _ in 0..eols {
-                        pe.push(ast::PatternElement::TextElement("\n"));
+                    if !pe.is_empty() {
+                        for _ in 0..eols {
+                            pe.push(ast::PatternElement::TextElement("\n"));
+                        }
                     }
                 }
                 Some(Token::OpenCurlyBraces) => {
@@ -206,9 +218,9 @@ impl<'p> Parser<'p> {
                     pe.pop();
                 }
             }
-            // if let Some(ast::PatternElement::TextElement(ref mut s)) = pe.last_mut() {
-            //     *s = s.trim_right();
-            // }
+            if let Some(ast::PatternElement::TextElement(ref mut s)) = pe.last_mut() {
+                *s = s.trim_end();
+            }
             Ok(Some(ast::Pattern {
                 elements: pe.into_boxed_slice(),
             }))
@@ -230,6 +242,21 @@ impl<'p> Parser<'p> {
             }),
             _ => Err(ParserError::Unknown),
         }
+    }
+
+    fn get_attributes(&mut self, attributes: &mut Vec<ast::Attribute<'p>>) -> ParserResult<()> {
+        let mut state = self.lexer.get_state_snapshot();
+        while self.lexer.take_if(Token::Dot)? {
+            match self.get_attribute() {
+                Ok(attr) => attributes.push(attr),
+                Err(err) => {
+                    state.2 = state.0;
+                    self.lexer.set_state(state);
+                    return Err(err);
+                }
+            }
+        }
+        Ok(())
     }
 
     fn get_attribute(&mut self) -> ParserResult<ast::Attribute<'p>> {
@@ -264,10 +291,20 @@ impl<'p> Parser<'p> {
             Token::ResourceCommentSign => ast::CommentType::Resource,
             _ => unreachable!(),
         };
-        self.last_comment = Some(ast::Comment {
-            comment_type,
-            content: pe.into_boxed_slice(),
-        });
+        if comment_type == ast::CommentType::Regular {
+            self.last_comment = Some(ast::Comment {
+                comment_type,
+                content: pe.into_boxed_slice(),
+            });
+        } else {
+            self.body
+                .push(ast::ResourceEntry::Entry(ast::Entry::Comment(
+                    ast::Comment {
+                        comment_type,
+                        content: pe.into_boxed_slice(),
+                    },
+                )));
+        }
         result
     }
 
@@ -287,7 +324,7 @@ impl<'p> Parser<'p> {
             Some(c @ Token::CommentSign)
             | Some(c @ Token::GroupCommentSign)
             | Some(c @ Token::ResourceCommentSign)
-                if c == token =>
+                if &c == token =>
             {
                 self.lexer.try_next()?;
             }
@@ -299,8 +336,44 @@ impl<'p> Parser<'p> {
     }
 
     fn get_expression(&mut self) -> ParserResult<ast::Expression<'p>> {
-        self.get_inline_expression()
-            .map(ast::Expression::InlineExpression)
+        let inline_expression = self.get_inline_expression()?;
+
+        if !self.lexer.take_if(Token::SelectorArrow)? {
+            if let ast::InlineExpression::TermReference { ref attribute, .. } = inline_expression {
+                if attribute.is_some() {
+                    return Err(ParserError::Unknown);
+                }
+            }
+            return Ok(ast::Expression::InlineExpression(inline_expression));
+        }
+
+        match inline_expression {
+            ast::InlineExpression::MessageReference { ref attribute, .. } => {
+                if attribute.is_none() {
+                    return Err(ParserError::Unknown);
+                } else {
+                    return Err(ParserError::Unknown);
+                }
+            }
+            ast::InlineExpression::TermReference { ref attribute, .. } => {
+                if attribute.is_none() {
+                    return Err(ParserError::Unknown);
+                }
+            }
+            ast::InlineExpression::StringLiteral { .. }
+            | ast::InlineExpression::NumberLiteral { .. }
+            | ast::InlineExpression::VariableReference { .. }
+            | ast::InlineExpression::FunctionReference { .. } => {}
+            _ => {
+                return Err(ParserError::Unknown);
+            }
+        };
+
+        let variants = self.get_variants()?;
+        Ok(ast::Expression::SelectExpression {
+            selector: inline_expression,
+            variants: variants.into_boxed_slice(),
+        })
     }
 
     fn get_inline_expression(&mut self) -> ParserResult<ast::InlineExpression<'p>> {
@@ -316,14 +389,50 @@ impl<'p> Parser<'p> {
                     let id = ast::Identifier {
                         name: &self.source[r],
                     };
+                    let attribute = if self.lexer.take_if(Token::Dot)? {
+                        Some(self.get_identifier()?)
+                    } else {
+                        None
+                    };
+                    let arguments = self.get_call_arguments()?;
                     Ok(ast::InlineExpression::TermReference {
                         id,
-                        attribute: None,
-                        arguments: None,
+                        attribute,
+                        arguments,
                     })
                 }
                 _ => Err(ParserError::Unknown),
             },
+            Some(Token::Dollar) => match self.lexer.try_next()? {
+                Some(Token::Identifier(r)) => {
+                    let id = ast::Identifier {
+                        name: &self.source[r],
+                    };
+                    Ok(ast::InlineExpression::VariableReference { id })
+                }
+                _ => Err(ParserError::Unknown),
+            },
+            Some(Token::Identifier(r)) => {
+                let id = ast::Identifier {
+                    name: &self.source[r],
+                };
+                let attribute = if self.lexer.take_if(Token::Dot)? {
+                    Some(self.get_identifier()?)
+                } else {
+                    None
+                };
+                let arguments = self.get_call_arguments()?;
+                if arguments.is_some() {
+                    if !id.name.bytes().all(|c| {
+                        c.is_ascii_uppercase() || c.is_ascii_digit() || c == b'_' || c == b'-'
+                    }) {
+                        return Err(ParserError::Unknown);
+                    }
+                    Ok(ast::InlineExpression::FunctionReference { id, arguments })
+                } else {
+                    Ok(ast::InlineExpression::MessageReference { id, attribute })
+                }
+            }
             Some(Token::Number(r)) => {
                 let num = self.get_number(r, false)?;
                 Ok(ast::InlineExpression::NumberLiteral {
@@ -333,26 +442,117 @@ impl<'p> Parser<'p> {
             Some(Token::Text(r)) => Ok(ast::InlineExpression::StringLiteral {
                 value: &self.source[r],
             }),
+            Some(Token::OpenCurlyBraces) => {
+                let exp = self.get_expression()?;
+                self.lexer.expect(Token::CloseCurlyBraces)?;
+                Ok(ast::InlineExpression::Placeable {
+                    expression: Box::new(exp),
+                })
+            }
             _ => Err(ParserError::Unknown),
         }
     }
 
-    fn get_number(&mut self, decimal: Range<usize>, minus: bool) -> ParserResult<Range<usize>> {
-        let mut result = decimal;
+    fn get_number(&mut self, r: Range<usize>, minus: bool) -> ParserResult<Range<usize>> {
+        let mut result = r;
         if minus {
             result.start -= 1;
         }
-        if self.lexer.take_if(Token::Dot)? {
-            match self.lexer.try_next()? {
-                Some(Token::Number(r)) => {
-                    result.end = r.end;
-                }
-                _ => {
-                    return Err(ParserError::Unknown);
-                }
-            }
-        }
 
         Ok(result)
+    }
+
+    fn get_call_arguments(&mut self) -> ParserResult<Option<ast::CallArguments<'p>>> {
+        if self.lexer.take_if(Token::OpenBraces)? {
+            let mut positional = vec![];
+            let mut named = vec![];
+            let mut argument_names = vec![];
+
+            loop {
+                if self.lexer.take_if(Token::CloseBraces)? {
+                    break;
+                }
+
+                let expr = self.get_inline_expression()?;
+
+                match expr {
+                    ast::InlineExpression::MessageReference {
+                        ref id,
+                        attribute: None,
+                    } => {
+                        if self.lexer.take_if(Token::Colon)? {
+                            if argument_names.contains(&id.name.to_owned()) {
+                                return Err(ParserError::Unknown);
+                            }
+                            let val = self.get_inline_expression()?;
+                            argument_names.push(id.name.to_owned());
+                            named.push(ast::NamedArgument {
+                                name: ast::Identifier { name: id.name },
+                                value: val,
+                            });
+                        } else {
+                            if !argument_names.is_empty() {
+                                return Err(ParserError::Unknown);
+                            }
+                            positional.push(expr);
+                        }
+                    }
+                    _ => {
+                        if !argument_names.is_empty() {
+                            return Err(ParserError::Unknown);
+                        }
+                        positional.push(expr);
+                    }
+                }
+
+                if !self.lexer.take_if(Token::Comma)? {
+                    if self.lexer.take_if(Token::CloseBraces)? {
+                        break;
+                    }
+                }
+            }
+
+            Ok(Some(ast::CallArguments {
+                positional: positional.into_boxed_slice(),
+                named: named.into_boxed_slice(),
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn get_variants(&mut self) -> ParserResult<Vec<ast::Variant<'p>>> {
+        let mut variants = vec![];
+        let mut has_default = false;
+
+        loop {
+            let default = self.lexer.take_if(Token::Asterisk)?;
+
+            if self.lexer.take_if(Token::OpenSquareBracket)? {
+                let key = self.get_variant_key()?;
+                self.lexer.expect(Token::CloseSquareBracket)?;
+                let value = self.get_pattern()?;
+                variants.push(ast::Variant {
+                    key,
+                    value,
+                    default,
+                });
+            } else {
+                break;
+            }
+        }
+        Ok(variants)
+    }
+
+    fn get_variant_key(&mut self) -> ParserResult<ast::VariantKey<'p>> {
+        match self.lexer.try_next()? {
+            Some(Token::Identifier(r)) => Ok(ast::VariantKey::Identifier {
+                name: &self.source[r],
+            }),
+            Some(Token::Number(r)) => Ok(ast::VariantKey::NumberLiteral {
+                value: &self.source[r],
+            }),
+            _ => panic!(),
+        }
     }
 }

@@ -70,6 +70,10 @@ pub struct Comment<'ast> {
 #[derive(Debug, PartialEq)]
 pub enum Expression<'ast> {
     InlineExpression(InlineExpression<'ast>),
+    SelectExpression {
+        selector: InlineExpression<'ast>,
+        variants: Box<[Variant<'ast>]>,
+    },
 }
 
 #[derive(Debug, PartialEq)]
@@ -80,6 +84,10 @@ pub enum InlineExpression<'ast> {
     NumberLiteral {
         value: &'ast str,
     },
+    FunctionReference {
+        id: Identifier<'ast>,
+        arguments: Option<CallArguments<'ast>>,
+    },
     MessageReference {
         id: Identifier<'ast>,
         attribute: Option<Identifier<'ast>>,
@@ -88,6 +96,12 @@ pub enum InlineExpression<'ast> {
         id: Identifier<'ast>,
         attribute: Option<Identifier<'ast>>,
         arguments: Option<CallArguments<'ast>>,
+    },
+    VariableReference {
+        id: Identifier<'ast>,
+    },
+    Placeable {
+        expression: Box<Expression<'ast>>,
     },
 }
 
@@ -101,4 +115,17 @@ pub struct CallArguments<'ast> {
 pub struct NamedArgument<'ast> {
     pub name: Identifier<'ast>,
     pub value: InlineExpression<'ast>,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct Variant<'ast> {
+    pub key: VariantKey<'ast>,
+    pub value: Pattern<'ast>,
+    pub default: bool,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum VariantKey<'ast> {
+    Identifier { name: &'ast str },
+    NumberLiteral { value: &'ast str },
 }
