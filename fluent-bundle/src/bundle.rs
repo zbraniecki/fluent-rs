@@ -1,4 +1,4 @@
-//! `FluentBundle` is a collection of localization messages in Fluent.
+//! `FluentBundleBase` is a collection of localization messages in Fluent.
 //!
 //! It stores a list of messages in a single locale which can reference one another, use the same
 //! internationalization formatters, functions, scopeironmental variables and are expected to be used
@@ -8,10 +8,10 @@ use std::borrow::Borrow;
 use std::borrow::Cow;
 use std::collections::hash_map::{Entry as HashEntry, HashMap};
 use std::default::Default;
-use std::sync::Mutex;
+use std::cell::RefCell;
 
 use fluent_syntax::ast;
-use intl_memoizer::IntlLangMemoizer;
+use intl_memoizer::{Memoizable, IntlLangMemoizer};
 use unic_langid::LanguageIdentifier;
 
 use crate::entry::Entry;
@@ -33,6 +33,38 @@ pub struct FluentMessage<'m> {
 /// the localization to be used for message
 /// formatting.
 pub type FluentArgs<'args> = HashMap<&'args str, FluentValue<'args>>;
+
+pub trait Memoizer {
+    fn new(lang: LanguageIdentifier) -> Self where Self:Sized;
+    fn with_try_get<I, R, U>(&self, args: I::Args, cb: U) -> Result<R, ()>
+        where Self:Sized,
+              I: Memoizable + 'static,
+              U: FnOnce(&I) -> R;
+}
+
+impl Memoizer for RefCell<IntlLangMemoizer> {
+    fn new(lang: LanguageIdentifier) -> Self where Self: Sized {
+        RefCell::new(IntlLangMemoizer::new(lang))
+    }
+
+    fn with_try_get<I, R, U>(&self, args: I::Args, cb: U) -> Result<R, ()>
+        where Self:Sized,
+              I: Memoizable + 'static,
+              U: FnOnce(&I) -> R {
+        match self.borrow_mut().try_get(args) {
+            Ok(memoizable) => {
+                Ok(cb(&memoizable))
+            },
+            Err(_) => {
+                Err(())
+            }
+        }
+    }
+}
+//
+// impl Memoizer for RefCell<IntlLangMemoizer> {};
+//
+// impl Memoizer for Mutex<IntlLangMemoizer> {};
 
 /// A collection of localization messages for a single locale, which are meant
 /// to be used together in a single view, widget or any other UI abstraction.
@@ -65,11 +97,11 @@ pub type FluentArgs<'args> = HashMap<&'args str, FluentValue<'args>>;
 ///
 /// ```
 ///
-/// # `FluentBundle` Life Cycle
+/// # `FluentBundleBase` Life Cycle
 ///
 /// ## Create a bundle
 ///
-/// To create a bundle, call [`FluentBundle::new`] with a locale list that represents the best
+/// To create a bundle, call [`FluentBundleBase::new`] with a locale list that represents the best
 /// possible fallback chain for a given locale. The simplest case is a one-locale list.
 ///
 /// Fluent uses [`LanguageIdentifier`] which can be created using `langid!` macro.
@@ -78,11 +110,11 @@ pub type FluentArgs<'args> = HashMap<&'args str, FluentValue<'args>>;
 ///
 /// Next, call [`add_resource`] one or more times, supplying translations in the FTL syntax.
 ///
-/// Since [`FluentBundle`] is generic over anything that can borrow a [`FluentResource`],
-/// one can use [`FluentBundle`] to own its resources, store references to them,
+/// Since [`FluentBundleBase`] is generic over anything that can borrow a [`FluentResource`],
+/// one can use [`FluentBundleBase`] to own its resources, store references to them,
 /// or even [`Rc<FluentResource>`] or [`Arc<FluentResource>`].
 ///
-/// The [`FluentBundle`] instance is now ready to be used for localization.
+/// The [`FluentBundleBase`] instance is now ready to be used for localization.
 ///
 /// ## Format
 ///
@@ -105,36 +137,38 @@ pub type FluentArgs<'args> = HashMap<&'args str, FluentValue<'args>>;
 ///
 /// # Locale Fallback Chain
 ///
-/// [`FluentBundle`] stores messages in a single locale, but keeps a locale fallback chain for the
+/// [`FluentBundleBase`] stores messages in a single locale, but keeps a locale fallback chain for the
 /// purpose of language negotiation with i18n formatters. For instance, if date and time formatting
-/// are not available in the first locale, [`FluentBundle`] will use its `locales` fallback chain
+/// are not available in the first locale, [`FluentBundleBase`] will use its `locales` fallback chain
 /// to negotiate a sensible fallback for date and time formatting.
 ///
-/// [`add_resource`]: ./struct.FluentBundle.html#method.add_resource
-/// [`FluentBundle::new`]: ./struct.FluentBundle.html#method.new
+/// [`add_resource`]: ./struct.FluentBundleBase.html#method.add_resource
+/// [`FluentBundleBase::new`]: ./struct.FluentBundleBase.html#method.new
 /// [`FluentMessage`]: ./struct.FluentMessage.html
-/// [`FluentBundle`]: ./struct.FluentBundle.html
+/// [`FluentBundleBase`]: ./struct.FluentBundleBase.html
 /// [`FluentResource`]: ./struct.FluentResource.html
-/// [`get_message`]: ./struct.FluentBundle.html#method.get_message
-/// [`format_pattern`]: ./struct.FluentBundle.html#method.format_pattern
-/// [`add_resource`]: ./struct.FluentBundle.html#method.add_resource
+/// [`get_message`]: ./struct.FluentBundleBase.html#method.get_message
+/// [`format_pattern`]: ./struct.FluentBundleBase.html#method.format_pattern
+/// [`add_resource`]: ./struct.FluentBundleBase.html#method.add_resource
 /// [`Cow<str>`]: http://doc.rust-lang.org/std/borrow/enum.Cow.html
 /// [`Rc<FluentResource>`]: https://doc.rust-lang.org/std/rc/struct.Rc.html
 /// [`Arc<FluentResource>`]: https://doc.rust-lang.org/std/sync/struct.Arc.html
 /// [`LanguageIdentifier`]: https://crates.io/crates/unic-langid
 /// [`Vec<FluentError>`]: ./enum.FluentError.html
-pub struct FluentBundle<R> {
+pub struct FluentBundleBase<R, M> {
     pub locales: Vec<LanguageIdentifier>,
     pub(crate) resources: Vec<R>,
     pub(crate) entries: HashMap<String, Entry>,
-    pub(crate) intls: Mutex<IntlLangMemoizer>,
+    pub(crate) intls: M,
     pub(crate) use_isolating: bool,
     pub(crate) transform: Option<fn(&str) -> Cow<str>>,
-    pub(crate) formatter: Option<fn(&FluentValue, &Mutex<IntlLangMemoizer>) -> Option<String>>,
+    pub(crate) formatter: Option<fn(&FluentValue, &M) -> Option<String>>,
 }
 
-impl<R> FluentBundle<R> {
-    /// Constructs a FluentBundle. `locales` is the fallback chain of locales
+pub type FluentBundle<R> = FluentBundleBase<R, RefCell<IntlLangMemoizer>>;
+
+impl<R, M: Memoizer> FluentBundleBase<R, M> {
+    /// Constructs a FluentBundleBase. `locales` is the fallback chain of locales
     /// to use for formatters like date and time. `locales` does not influence
     /// message selection.
     ///
@@ -160,11 +194,11 @@ impl<R> FluentBundle<R> {
             .map(|s| s.clone().into())
             .collect::<Vec<_>>();
         let lang = locales.get(0).cloned().unwrap_or_default();
-        FluentBundle {
+        FluentBundleBase {
             locales,
             resources: vec![],
             entries: HashMap::new(),
-            intls: Mutex::new(IntlLangMemoizer::new(lang)),
+            intls: M::new(lang),
             use_isolating: true,
             transform: None,
             formatter: None,
@@ -184,7 +218,7 @@ impl<R> FluentBundle<R> {
     ///   - Arc<FluentResurce>
     ///
     /// This allows the user to introduce custom resource management and share
-    /// resources between instances of `FluentBundle`.
+    /// resources between instances of `FluentBundleBase`.
     ///
     /// # Examples
     ///
@@ -275,7 +309,7 @@ impl<R> FluentBundle<R> {
     ///   - Arc<FluentResurce>
     ///
     /// This allows the user to introduce custom resource management and share
-    /// resources between instances of `FluentBundle`.
+    /// resources between instances of `FluentBundleBase`.
     ///
     /// # Examples
     ///
@@ -351,7 +385,7 @@ impl<R> FluentBundle<R> {
         self.resources.push(r);
     }
 
-    /// When formatting patterns, `FluentBundle` inserts
+    /// When formatting patterns, `FluentBundleBase` inserts
     /// Unicode Directionality Isolation Marks to indicate
     /// that the direction of a placeable may differ from
     /// the surrounding message.
@@ -389,7 +423,7 @@ impl<R> FluentBundle<R> {
     /// formatter for `FluentValue::Number`.
     pub fn set_formatter(
         &mut self,
-        func: Option<fn(&FluentValue, &Mutex<IntlLangMemoizer>) -> Option<String>>,
+        func: Option<fn(&FluentValue, &M) -> Option<String>>,
     ) {
         if let Some(f) = func {
             self.formatter = Some(f);
@@ -512,15 +546,15 @@ impl<R> FluentBundle<R> {
     }
 }
 
-impl<R> Default for FluentBundle<R> {
+impl<R, M: Memoizer> Default for FluentBundleBase<R, M> {
     fn default() -> Self {
         let langid = LanguageIdentifier::default();
-        FluentBundle {
+        FluentBundleBase {
             locales: vec![langid.clone()],
             resources: vec![],
             entries: Default::default(),
             use_isolating: true,
-            intls: Mutex::new(IntlLangMemoizer::new(langid)),
+            intls: M::new(langid),
             transform: None,
             formatter: None,
         }

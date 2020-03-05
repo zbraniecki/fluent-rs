@@ -1,15 +1,15 @@
 //! Fluent is a modern localization system designed to improve how software is translated.
 //!
 //! The Rust implementation provides the low level components for syntax operations, like parser
-//! and AST, and the core localization struct - [`FluentBundle`].
+//! and AST, and the core localization struct - [`FluentBundleBase`].
 //!
-//! [`FluentBundle`] is the low level container for storing and formatting localization messages
+//! [`FluentBundleBase`] is the low level container for storing and formatting localization messages
 //! in a single locale.
 //!
 //! This crate provides also a number of structures needed for a localization API such as [`FluentResource`],
 //! [`FluentMessage`], [`FluentArgs`], and [`FluentValue`].
 //!
-//! Together, they allow implementations to build higher-level APIs that use [`FluentBundle`]
+//! Together, they allow implementations to build higher-level APIs that use [`FluentBundleBase`]
 //! and add user friendly helpers, framework bindings, error fallbacking,
 //! language negotiation between user requested languages and available resources,
 //! and I/O for loading selected resources.
@@ -73,7 +73,7 @@
 //! the `fluent-bundle` crate directly, while the ecosystem
 //! matures and higher level APIs are being developed.
 //!
-//! [`FluentBundle`]: ./bundle/struct.FluentBundle.html
+//! [`FluentBundleBase`]: ./bundle/struct.FluentBundleBase.html
 //! [`FluentResource`]: ./bundle/struct.FluentResource.html
 //! [`FluentMessage`]: ./bundle/struct.FluentMessage.html
 //! [`FluentArgs`]: ./bundle/type.FluentArgs.html
@@ -89,7 +89,7 @@ pub mod resolve;
 mod resource;
 pub mod types;
 
-pub use bundle::{FluentArgs, FluentBundle, FluentMessage};
+pub use bundle::{FluentArgs, FluentBundle, FluentMessage, Memoizer};
 pub use errors::FluentError;
 pub use resource::FluentResource;
 pub use types::FluentValue;
