@@ -1,6 +1,6 @@
 #[derive(Debug, PartialEq)]
 pub struct Resource<'ast> {
-    pub body: Vec<ResourceEntry<'ast>>,
+    pub body: Box<[ResourceEntry<'ast>]>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -20,7 +20,7 @@ pub enum Entry<'ast> {
 pub struct Message<'ast> {
     pub id: Identifier<'ast>,
     pub value: Option<Pattern<'ast>>,
-    pub attributes: Vec<Attribute<'ast>>,
+    pub attributes: Box<[Attribute<'ast>]>,
     pub comment: Option<Comment<'ast>>,
 }
 
@@ -28,13 +28,13 @@ pub struct Message<'ast> {
 pub struct Term<'ast> {
     pub id: Identifier<'ast>,
     pub value: Pattern<'ast>,
-    pub attributes: Vec<Attribute<'ast>>,
+    pub attributes: Box<[Attribute<'ast>]>,
     pub comment: Option<Comment<'ast>>,
 }
 
 #[derive(Debug, PartialEq)]
 pub struct Pattern<'ast> {
-    pub elements: Vec<PatternElement<'ast>>,
+    pub elements: Box<[PatternElement<'ast>]>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -68,10 +68,16 @@ pub enum VariantKey<'ast> {
 }
 
 #[derive(Debug, PartialEq)]
-pub enum Comment<'ast> {
-    Comment { content: Vec<&'ast str> },
-    GroupComment { content: Vec<&'ast str> },
-    ResourceComment { content: Vec<&'ast str> },
+pub enum CommentType {
+    Regular,
+    Group,
+    Resource,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct Comment<'ast> {
+    pub comment_type: CommentType,
+    pub content: Box<[&'ast str]>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -105,8 +111,8 @@ pub enum InlineExpression<'ast> {
 
 #[derive(Debug, PartialEq)]
 pub struct CallArguments<'ast> {
-    pub positional: Vec<InlineExpression<'ast>>,
-    pub named: Vec<NamedArgument<'ast>>,
+    pub positional: Box<[InlineExpression<'ast>]>,
+    pub named: Box<[NamedArgument<'ast>]>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -120,6 +126,6 @@ pub enum Expression<'ast> {
     InlineExpression(InlineExpression<'ast>),
     SelectExpression {
         selector: InlineExpression<'ast>,
-        variants: Vec<Variant<'ast>>,
+        variants: Box<[Variant<'ast>]>,
     },
 }

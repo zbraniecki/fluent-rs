@@ -2,7 +2,7 @@ use std::fs;
 use std::io;
 
 use fluent_syntax::json;
-use fluent_syntax::parser::parse;
+use fluent_syntax::parser::Parser;
 
 fn read_file(path: &str) -> Result<String, io::Error> {
     fs::read_to_string(path)
@@ -19,7 +19,7 @@ fn main() {
     for sample in samples {
         let path = format!("./benches/{}.ftl", sample);
         let source = read_file(&path).unwrap();
-        let ast = parse(&source).unwrap();
+        let ast = Parser::new(&source).parse().unwrap();
         let target_json = json::serialize_to_pretty_json(&ast).unwrap();
         let new_path = format!("./tests/fixtures/benches/{}.json", sample);
         write_file(&new_path, &target_json).unwrap();
@@ -32,7 +32,7 @@ fn main() {
             let file_name = p.file_name().unwrap().to_str().unwrap();
             let path = p.to_str().unwrap();
             let source = read_file(path).unwrap();
-            let ast = parse(&source).unwrap();
+            let ast = Parser::new(&source).parse().unwrap();
             let target_json = json::serialize_to_pretty_json(&ast).unwrap();
             let new_path = format!(
                 "./tests/fixtures/benches/contexts/{}/{}",

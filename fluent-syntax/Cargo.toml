@@ -35,9 +35,17 @@ json = ["serde", "serde_json"]
 name = "parser"
 harness = false
 
+[[bench]]
+name = "lexer"
+harness = false
+
 [[bin]]
 name = "parser"
 path = "src/bin/parser.rs"
+
+[[bin]]
+name = "lexer"
+path = "src/bin/lexer.rs"
 
 [[bin]]
 name = "update_fixtures"
