@@ -82,14 +82,49 @@
 #[macro_use]
 extern crate rental;
 
+use intl_memoizer::{IntlLangMemoizer, Memoizable};
+use std::cell::RefCell;
+use unic_langid::LanguageIdentifier;
+
 mod bundle;
+pub mod concurrent;
 mod entry;
 mod errors;
+pub mod memoizer;
 pub mod resolve;
 mod resource;
 pub mod types;
 
-pub use bundle::{FluentArgs, FluentBundle, FluentMessage};
+pub use bundle::{FluentArgs, FluentMessage};
 pub use errors::FluentError;
 pub use resource::FluentResource;
 pub use types::FluentValue;
+
+pub type Memoizer = RefCell<IntlLangMemoizer>;
+
+pub type FluentBundle<R> = bundle::FluentBundleBase<R, Memoizer>;
+
+impl memoizer::MemoizerKind for Memoizer {
+    fn new(lang: LanguageIdentifier) -> Self
+    where
+        Self: Sized,
+    {
+        RefCell::new(IntlLangMemoizer::new(lang))
+    }
+
+    fn with_try_get<I, R, U>(&self, args: I::Args, cb: U) -> Result<R, ()>
+    where
+        Self: Sized,
+        I: Memoizable + 'static,
+        U: FnOnce(&I) -> R,
+    {
+        match self.borrow_mut().try_get(args) {
+            Ok(memoizable) => Ok(cb(&memoizable)),
+            Err(_) => Err(()),
+        }
+    }
+
+    fn stringify_value(&self, value: &dyn types::FluentType) -> std::borrow::Cow<'static, str> {
+        value.as_string(self)
+    }
+}

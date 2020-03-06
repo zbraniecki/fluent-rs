@@ -9,14 +9,15 @@ use std::borrow::{Borrow, Cow};
 use std::default::Default;
 use std::fmt;
 use std::str::FromStr;
-use std::sync::Mutex;
 
 use fluent_syntax::ast;
-use intl_memoizer::IntlLangMemoizer;
 use intl_pluralrules::{PluralCategory, PluralRuleType};
 
+use crate::concurrent;
+use crate::memoizer::MemoizerKind;
 use crate::resolve::Scope;
 use crate::resource::FluentResource;
+use crate::Memoizer;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum DisplayableNodeType<'source> {
@@ -109,7 +110,8 @@ impl<'source> From<&ast::InlineExpression<'source>> for DisplayableNode<'source>
 
 pub trait FluentType: fmt::Debug + AnyEq + 'static {
     fn duplicate(&self) -> Box<dyn FluentType>;
-    fn as_string(&self, intls: &Mutex<IntlLangMemoizer>) -> Cow<'static, str>;
+    fn as_string(&self, intls: &Memoizer) -> Cow<'static, str>;
+    fn as_string_threadsafe(&self, intls: &concurrent::Memoizer) -> Cow<'static, str>;
 }
 
 impl PartialEq for dyn FluentType {
@@ -156,7 +158,6 @@ pub enum FluentValue<'source> {
     Error(DisplayableNode<'source>),
     None,
 }
-
 impl<'s> PartialEq for FluentValue<'s> {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
@@ -193,10 +194,10 @@ impl<'source> FluentValue<'source> {
         }
     }
 
-    pub fn matches<R: Borrow<FluentResource>>(
+    pub fn matches<R: Borrow<FluentResource>, M: MemoizerKind>(
         &self,
         other: &FluentValue,
-        scope: &Scope<R>,
+        scope: &Scope<R, M>,
     ) -> bool {
         match (self, other) {
             (&FluentValue::String(ref a), &FluentValue::String(ref b)) => a == b,
@@ -211,21 +212,22 @@ impl<'source> FluentValue<'source> {
                     "other" => PluralCategory::OTHER,
                     _ => return false,
                 };
-                let mut intls = scope
+                scope
                     .bundle
                     .intls
-                    .lock()
-                    .expect("Failed to get rw lock on intl memoizer.");
-                let pr = intls
-                    .try_get::<PluralRules>((PluralRuleType::CARDINAL,))
-                    .expect("Failed to retrieve plural rules");
-                pr.0.select(b) == Ok(cat)
+                    .with_try_get::<PluralRules, _, _>((PluralRuleType::CARDINAL,), |pr| {
+                        pr.0.select(b) == Ok(cat)
+                    })
+                    .unwrap()
             }
             _ => false,
         }
     }
 
-    pub fn as_string<R: Borrow<FluentResource>>(&self, scope: &Scope<R>) -> Cow<'source, str> {
+    pub fn as_string<R: Borrow<FluentResource>, M: MemoizerKind>(
+        &self,
+        scope: &Scope<R, M>,
+    ) -> Cow<'source, str> {
         if let Some(formatter) = &scope.bundle.formatter {
             if let Some(val) = formatter(self, &scope.bundle.intls) {
                 return val.into();
@@ -235,7 +237,7 @@ impl<'source> FluentValue<'source> {
             FluentValue::String(s) => s.clone(),
             FluentValue::Number(n) => n.as_string(),
             FluentValue::Error(d) => format!("{{{}}}", d.to_string()).into(),
-            FluentValue::Custom(s) => s.as_string(&scope.bundle.intls),
+            FluentValue::Custom(s) => scope.bundle.intls.stringify_value(&**s),
             FluentValue::None => "???".into(),
         }
     }
