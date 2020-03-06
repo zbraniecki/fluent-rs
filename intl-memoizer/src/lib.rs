@@ -3,8 +3,9 @@ use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::hash::Hash;
 use std::rc::{Rc, Weak};
-use type_map::concurrent::TypeMap;
 use unic_langid::LanguageIdentifier;
+
+pub mod concurrent;
 
 pub trait Memoizable {
     type Args: 'static + Eq + Hash + Clone;
@@ -14,22 +15,23 @@ pub trait Memoizable {
         Self: std::marker::Sized;
 }
 
+#[derive(Debug)]
 pub struct IntlLangMemoizer {
     lang: LanguageIdentifier,
-    map: TypeMap,
+    map: type_map::TypeMap,
 }
 
 impl IntlLangMemoizer {
     pub fn new(lang: LanguageIdentifier) -> Self {
         Self {
             lang,
-            map: TypeMap::new(),
+            map: type_map::TypeMap::new(),
         }
     }
 
-    pub fn try_get<T: Memoizable + Sync + Send + 'static>(&mut self, args: T::Args) -> Result<&T, T::Error>
+    pub fn try_get<T: Memoizable + 'static>(&mut self, args: T::Args) -> Result<&T, T::Error>
     where
-        T::Args: Eq + Sync + Send,
+        T::Args: Eq,
     {
         let cache = self
             .map
