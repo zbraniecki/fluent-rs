@@ -1,38 +1,40 @@
 use super::*;
+use std::sync::Mutex;
 
 #[derive(Debug)]
 pub struct IntlLangMemoizer {
     lang: LanguageIdentifier,
-    map: type_map::concurrent::TypeMap,
+    map: Mutex<type_map::concurrent::TypeMap>,
 }
 
 impl IntlLangMemoizer {
     pub fn new(lang: LanguageIdentifier) -> Self {
         Self {
             lang,
-            map: type_map::concurrent::TypeMap::new(),
+            map: Mutex::new(type_map::concurrent::TypeMap::new()),
         }
     }
 
-    pub fn try_get<T: Memoizable + Sync + Send + 'static>(
-        &mut self,
-        args: T::Args,
-    ) -> Result<&T, T::Error>
+    pub fn with_try_get<I, R, U>(&self, args: I::Args, cb: U) -> Result<R, I::Error>
     where
-        T::Args: Eq + Sync + Send,
+        Self: Sized,
+        I: Memoizable + Send + Sync + 'static,
+        I::Args: Send + Sync + 'static,
+        U: FnOnce(&I) -> R,
     {
-        let cache = self
-            .map
-            .entry::<HashMap<T::Args, T>>()
+        let mut map = self.map.lock().unwrap();
+        let cache = map
+            .entry::<HashMap<I::Args, I>>()
             .or_insert_with(HashMap::new);
 
         let e = match cache.entry(args.clone()) {
             Entry::Occupied(entry) => entry.into_mut(),
             Entry::Vacant(entry) => {
-                let val = T::construct(self.lang.clone(), args)?;
+                let val = I::construct(self.lang.clone(), args)?;
                 entry.insert(val)
             }
         };
-        Ok(e)
+        let r = cb(&e);
+        Ok(r)
     }
 }

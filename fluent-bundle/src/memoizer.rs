@@ -7,10 +7,11 @@ pub trait MemoizerKind: 'static {
     where
         Self: Sized;
 
-    fn with_try_get<I, R, U>(&self, args: I::Args, cb: U) -> Result<R, ()>
+    fn with_try_get_threadsafe<I, R, U>(&self, args: I::Args, cb: U) -> Result<R, I::Error>
     where
         Self: Sized,
-        I: Memoizable + 'static,
+        I: Memoizable + Send + Sync + 'static,
+        I::Args: Send + Sync + 'static,
         U: FnOnce(&I) -> R;
 
     fn stringify_value(&self, value: &dyn FluentType) -> std::borrow::Cow<'static, str>;
