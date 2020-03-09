@@ -12,7 +12,6 @@
 use intl_memoizer::Memoizable;
 use unic_langid::LanguageIdentifier;
 
-use fluent_bundle::memoizer::MemoizerKind;
 use fluent_bundle::types::FluentType;
 use fluent_bundle::{concurrent, Memoizer};
 use fluent_bundle::{FluentArgs, FluentBundle, FluentResource, FluentValue};

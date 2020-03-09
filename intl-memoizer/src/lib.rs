@@ -55,14 +55,14 @@ impl IntlLangMemoizer {
 
 #[derive(Default)]
 pub struct IntlMemoizer {
-    map: HashMap<LanguageIdentifier, Weak<RefCell<IntlLangMemoizer>>>,
+    map: HashMap<LanguageIdentifier, Weak<IntlLangMemoizer>>,
 }
 
 impl IntlMemoizer {
-    pub fn get_for_lang(&mut self, lang: LanguageIdentifier) -> Rc<RefCell<IntlLangMemoizer>> {
+    pub fn get_for_lang(&mut self, lang: LanguageIdentifier) -> Rc<IntlLangMemoizer> {
         match self.map.entry(lang.clone()) {
             Entry::Vacant(empty) => {
-                let entry = Rc::new(RefCell::new(IntlLangMemoizer::new(lang)));
+                let entry = Rc::new(IntlLangMemoizer::new(lang));
                 empty.insert(Rc::downgrade(&entry));
                 entry
             }
@@ -70,7 +70,7 @@ impl IntlMemoizer {
                 if let Some(entry) = entry.get().upgrade() {
                     entry
                 } else {
-                    let e = Rc::new(RefCell::new(IntlLangMemoizer::new(lang)));
+                    let e = Rc::new(IntlLangMemoizer::new(lang));
                     entry.insert(Rc::downgrade(&e));
                     e
                 }
@@ -120,22 +120,20 @@ mod tests {
         let mut memoizer = IntlMemoizer::default();
         {
             let en_memoizer = memoizer.get_for_lang(lang.clone());
-            let mut en_memoizer_borrow = en_memoizer.borrow_mut();
 
-            let cb = en_memoizer_borrow
-                .try_get::<PluralRules>((PluralRuleType::CARDINAL,))
+            let result = en_memoizer
+                .with_try_get::<PluralRules, _, _>((PluralRuleType::CARDINAL,), |cb| cb.0.select(5))
                 .unwrap();
-            assert_eq!(cb.0.select(5), Ok(PluralCategory::OTHER));
+            assert_eq!(result, Ok(PluralCategory::OTHER));
         }
 
         {
             let en_memoizer = memoizer.get_for_lang(lang.clone());
-            let mut en_memoizer_borrow = en_memoizer.borrow_mut();
 
-            let cb = en_memoizer_borrow
-                .try_get::<PluralRules>((PluralRuleType::CARDINAL,))
+            let result = en_memoizer
+                .with_try_get::<PluralRules, _, _>((PluralRuleType::CARDINAL,), |cb| cb.0.select(5))
                 .unwrap();
-            assert_eq!(cb.0.select(5), Ok(PluralCategory::OTHER));
+            assert_eq!(result, Ok(PluralCategory::OTHER));
         }
     }
 }
