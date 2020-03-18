@@ -1,3 +1,5 @@
+pub mod asynchronous;
+
 use std::borrow::Borrow;
 use std::borrow::Cow;
 
