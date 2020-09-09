@@ -30,7 +30,7 @@ impl Message<String> {
             id: self.id.borrowed(),
             value: self.value.as_ref().map(|v| v.borrowed()),
             attributes: vec![],
-            comment: None
+            comment: None,
         }
     }
 }
@@ -50,9 +50,7 @@ pub struct Pattern<S> {
 
 impl Pattern<String> {
     pub fn borrowed<'s>(&'s self) -> Pattern<&'s str> {
-        let elements = self.elements.iter().map(|elem| {
-            elem.borrowed()
-        }).collect();
+        let elements = self.elements.iter().map(|elem| elem.borrowed()).collect();
         Pattern { elements }
     }
 }
@@ -67,7 +65,7 @@ impl PatternElement<String> {
     pub fn borrowed<'s>(&'s self) -> PatternElement<&'s str> {
         match self {
             Self::TextElement(ref s) => PatternElement::TextElement(s.as_str()),
-            Self::Placeable(_) => unimplemented!()
+            Self::Placeable(_) => unimplemented!(),
         }
     }
 }
