@@ -27,8 +27,8 @@ include = [
 fluent-langneg = "0.13"
 fluent-syntax = { version = "0.9", path = "../fluent-syntax" }
 intl_pluralrules = "7.0"
+owning_ref = "0.4.1"
 rental = "0.5"
-smallvec = "1.0"
 unic-langid = "0.9"
 intl-memoizer = { version = "0.5", path = "../intl-memoizer" }
 

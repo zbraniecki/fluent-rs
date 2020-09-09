@@ -1,125 +1,160 @@
-#[derive(Debug, PartialEq)]
-pub struct Resource<'ast> {
-    pub body: Vec<ResourceEntry<'ast>>,
+#[derive(Debug, PartialEq, Clone)]
+pub struct Resource<S> {
+    pub body: Vec<ResourceEntry<S>>,
 }
 
-#[derive(Debug, PartialEq)]
-pub enum ResourceEntry<'ast> {
-    Entry(Entry<'ast>),
-    Junk(&'ast str),
+#[derive(Debug, PartialEq, Clone)]
+pub enum ResourceEntry<S> {
+    Entry(Entry<S>),
+    Junk(S),
 }
 
-#[derive(Debug, PartialEq)]
-pub enum Entry<'ast> {
-    Message(Message<'ast>),
-    Term(Term<'ast>),
-    Comment(Comment<'ast>),
+#[derive(Debug, PartialEq, Clone)]
+pub enum Entry<S> {
+    Message(Message<S>),
+    Term(Term<S>),
+    Comment(Comment<S>),
 }
 
-#[derive(Debug, PartialEq)]
-pub struct Message<'ast> {
-    pub id: Identifier<'ast>,
-    pub value: Option<Pattern<'ast>>,
-    pub attributes: Vec<Attribute<'ast>>,
-    pub comment: Option<Comment<'ast>>,
+#[derive(Debug, PartialEq, Clone)]
+pub struct Message<S> {
+    pub id: Identifier<S>,
+    pub value: Option<Pattern<S>>,
+    pub attributes: Vec<Attribute<S>>,
+    pub comment: Option<Comment<S>>,
 }
 
-#[derive(Debug, PartialEq)]
-pub struct Term<'ast> {
-    pub id: Identifier<'ast>,
-    pub value: Pattern<'ast>,
-    pub attributes: Vec<Attribute<'ast>>,
-    pub comment: Option<Comment<'ast>>,
+impl Message<String> {
+    pub fn borrowed<'s>(&'s self) -> Message<&'s str> {
+        Message {
+            id: self.id.borrowed(),
+            value: self.value.as_ref().map(|v| v.borrowed()),
+            attributes: vec![],
+            comment: None
+        }
+    }
 }
 
-#[derive(Debug, PartialEq)]
-pub struct Pattern<'ast> {
-    pub elements: Vec<PatternElement<'ast>>,
+#[derive(Debug, PartialEq, Clone)]
+pub struct Term<S> {
+    pub id: Identifier<S>,
+    pub value: Pattern<S>,
+    pub attributes: Vec<Attribute<S>>,
+    pub comment: Option<Comment<S>>,
 }
 
-#[derive(Debug, PartialEq)]
-pub enum PatternElement<'ast> {
-    TextElement(&'ast str),
-    Placeable(Expression<'ast>),
+#[derive(Debug, PartialEq, Clone)]
+pub struct Pattern<S> {
+    pub elements: Vec<PatternElement<S>>,
 }
 
-#[derive(Debug, PartialEq)]
-pub struct Attribute<'ast> {
-    pub id: Identifier<'ast>,
-    pub value: Pattern<'ast>,
+impl Pattern<String> {
+    pub fn borrowed<'s>(&'s self) -> Pattern<&'s str> {
+        let elements = self.elements.iter().map(|elem| {
+            elem.borrowed()
+        }).collect();
+        Pattern { elements }
+    }
 }
 
-#[derive(Debug, PartialEq)]
-pub struct Identifier<'ast> {
-    pub name: &'ast str,
+#[derive(Debug, PartialEq, Clone)]
+pub enum PatternElement<S> {
+    TextElement(S),
+    Placeable(Expression<S>),
 }
 
-#[derive(Debug, PartialEq)]
-pub struct Variant<'ast> {
-    pub key: VariantKey<'ast>,
-    pub value: Pattern<'ast>,
+impl PatternElement<String> {
+    pub fn borrowed<'s>(&'s self) -> PatternElement<&'s str> {
+        match self {
+            Self::TextElement(ref s) => PatternElement::TextElement(s.as_str()),
+            Self::Placeable(_) => unimplemented!()
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct Attribute<S> {
+    pub id: Identifier<S>,
+    pub value: Pattern<S>,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct Identifier<S> {
+    pub name: S,
+}
+
+impl Identifier<String> {
+    pub fn borrowed<'s>(&'s self) -> Identifier<&'s str> {
+        Identifier { name: &self.name }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct Variant<S> {
+    pub key: VariantKey<S>,
+    pub value: Pattern<S>,
     pub default: bool,
 }
 
-#[derive(Debug, PartialEq)]
-pub enum VariantKey<'ast> {
-    Identifier { name: &'ast str },
-    NumberLiteral { value: &'ast str },
+#[derive(Debug, PartialEq, Clone)]
+pub enum VariantKey<S> {
+    Identifier { name: S },
+    NumberLiteral { value: S },
 }
 
-#[derive(Debug, PartialEq)]
-pub enum Comment<'ast> {
-    Comment { content: Vec<&'ast str> },
-    GroupComment { content: Vec<&'ast str> },
-    ResourceComment { content: Vec<&'ast str> },
+#[derive(Debug, PartialEq, Clone)]
+pub enum Comment<S> {
+    Comment { content: Vec<S> },
+    GroupComment { content: Vec<S> },
+    ResourceComment { content: Vec<S> },
 }
 
-#[derive(Debug, PartialEq)]
-pub enum InlineExpression<'ast> {
+#[derive(Debug, PartialEq, Clone)]
+pub enum InlineExpression<S> {
     StringLiteral {
-        value: &'ast str,
+        value: S,
     },
     NumberLiteral {
-        value: &'ast str,
+        value: S,
     },
     FunctionReference {
-        id: Identifier<'ast>,
-        arguments: Option<CallArguments<'ast>>,
+        id: Identifier<S>,
+        arguments: Option<CallArguments<S>>,
     },
     MessageReference {
-        id: Identifier<'ast>,
-        attribute: Option<Identifier<'ast>>,
+        id: Identifier<S>,
+        attribute: Option<Identifier<S>>,
     },
     TermReference {
-        id: Identifier<'ast>,
-        attribute: Option<Identifier<'ast>>,
-        arguments: Option<CallArguments<'ast>>,
+        id: Identifier<S>,
+        attribute: Option<Identifier<S>>,
+        arguments: Option<CallArguments<S>>,
     },
     VariableReference {
-        id: Identifier<'ast>,
+        id: Identifier<S>,
     },
     Placeable {
-        expression: Box<Expression<'ast>>,
+        expression: Box<Expression<S>>,
     },
 }
 
-#[derive(Debug, PartialEq)]
-pub struct CallArguments<'ast> {
-    pub positional: Vec<InlineExpression<'ast>>,
-    pub named: Vec<NamedArgument<'ast>>,
+#[derive(Debug, PartialEq, Clone)]
+pub struct CallArguments<S> {
+    pub positional: Vec<InlineExpression<S>>,
+    pub named: Vec<NamedArgument<S>>,
 }
 
-#[derive(Debug, PartialEq)]
-pub struct NamedArgument<'ast> {
-    pub name: Identifier<'ast>,
-    pub value: InlineExpression<'ast>,
+#[derive(Debug, PartialEq, Clone)]
+pub struct NamedArgument<S> {
+    pub name: Identifier<S>,
+    pub value: InlineExpression<S>,
 }
 
-#[derive(Debug, PartialEq)]
-pub enum Expression<'ast> {
-    InlineExpression(InlineExpression<'ast>),
+#[derive(Debug, PartialEq, Clone)]
+pub enum Expression<S> {
+    InlineExpression(InlineExpression<S>),
     SelectExpression {
-        selector: InlineExpression<'ast>,
-        variants: Vec<Variant<'ast>>,
+        selector: InlineExpression<S>,
+        variants: Vec<Variant<S>>,
     },
 }
