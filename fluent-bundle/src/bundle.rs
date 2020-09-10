@@ -1,21 +1,24 @@
-use crate::memoizer::{Memoizer, MemoizerKind};
-use crate::resolve::ResolveValue;
+use crate::args::FluentArgs;
+use crate::errors::FluentError;
+use crate::memoizer::MemoizerKind;
+use crate::resolver::{scope::Scope, ResolveValue};
 use crate::resource::FluentResource;
-use crate::FluentError;
 use fluent_syntax::ast;
+use intl_memoizer::IntlLangMemoizer;
 use std::borrow::Borrow;
 use std::fmt;
+use unic_langid::LanguageIdentifier;
 
 pub struct FluentBundle<R, M> {
     resources: Vec<R>,
-    intls: M,
+    pub intls: M,
 }
 
-impl<R> FluentBundle<R, Memoizer> {
+impl<R> FluentBundle<R, IntlLangMemoizer> {
     pub fn new() -> Self {
         FluentBundle {
             resources: vec![],
-            intls: Memoizer::new(),
+            intls: IntlLangMemoizer::new(LanguageIdentifier::default()),
         }
     }
 }
@@ -49,14 +52,19 @@ impl<R, M> FluentBundle<R, M> {
         None
     }
 
-    pub fn format_pattern<'bundle, S, W: fmt::Write>(
+    pub fn format_pattern<'bundle, S, A, W: fmt::Write>(
         &'bundle self,
         w: &mut W,
         pattern: &ast::Pattern<S>,
+        args: Option<FluentArgs<A>>,
     ) -> fmt::Result
     where
         S: AsRef<str>,
+        A: AsRef<str>,
+        R: Borrow<FluentResource>,
+        M: MemoizerKind,
     {
-        pattern.write(w)
+        let mut scope = Scope::new(self, args);
+        pattern.write(w, &mut scope)
     }
 }
