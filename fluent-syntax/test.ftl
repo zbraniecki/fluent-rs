@@ -1,1 +1,1 @@
-hello-world =Value
+hello-world =Value { $foo} Foo
