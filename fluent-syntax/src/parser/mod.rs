@@ -119,12 +119,58 @@ where
     pub fn parse(
         &mut self,
     ) -> std::result::Result<ast::Resource<S>, (ast::Resource<S>, Vec<ParserError>)> {
-        let entry_start = self.ptr;
-        let entry = self.get_entry(entry_start).unwrap();
-        let res = ast::Resource {
-            body: vec![ast::ResourceEntry::Entry(entry)],
-        };
-        Ok(res)
+        let mut errors = vec![];
+
+        let mut body = vec![];
+
+        self.skip_blank_block();
+        let mut last_comment = None;
+        let mut last_blank_count = 0;
+
+        while self.ptr < self.length {
+            let entry_start = self.ptr;
+            let mut entry = self.get_entry(entry_start);
+
+            if let Some(comment) = last_comment.take() {
+                match entry {
+                    Ok(ast::Entry::Message(ref mut msg)) if last_blank_count < 2 => {
+                        msg.comment = Some(comment);
+                    }
+                    Ok(ast::Entry::Term(ref mut term)) if last_blank_count < 2 => {
+                        term.comment = Some(comment);
+                    }
+                    _ => {
+                        body.push(ast::ResourceEntry::Entry(ast::Entry::Comment(comment)));
+                    }
+                }
+            }
+
+            match entry {
+                Ok(ast::Entry::Comment(comment @ ast::Comment::Comment { .. })) => {
+                    last_comment = Some(comment);
+                }
+                Ok(entry) => {
+                    body.push(ast::ResourceEntry::Entry(entry));
+                }
+                Err(mut err) => {
+                    self.skip_to_next_entry_start();
+                    err.slice = Some((entry_start, self.ptr));
+                    errors.push(err);
+                    let slice = self.source.slice(entry_start..self.ptr);
+                    body.push(ast::ResourceEntry::Junk(slice));
+                }
+            }
+            last_blank_count = self.skip_blank_block();
+        }
+
+        if let Some(last_comment) = last_comment.take() {
+            body.push(ast::ResourceEntry::Entry(ast::Entry::Comment(last_comment)));
+        }
+        if errors.is_empty() {
+            Ok(ast::Resource { body })
+        } else {
+            Err((ast::Resource { body }, errors))
+        }
     }
 
     fn get_entry(&mut self, entry_start: usize) -> Result<ast::Entry<S>> {
@@ -811,6 +857,18 @@ where
 
     fn is_byte_at(&self, b: u8, pos: usize) -> bool {
         self.source.get_char(pos) == Some(&b)
+    }
+
+    fn skip_to_next_entry_start(&mut self) {
+        while let Some(b) = self.source.get_char(self.ptr) {
+            let new_line = self.ptr == 0 || self.source.get_char(self.ptr - 1) == Some(&b'\n');
+
+            if new_line && (b.is_ascii_alphabetic() || [b'-', b'#'].contains(b)) {
+                break;
+            }
+
+            self.ptr += 1;
+        }
     }
 
     fn skip_eol(&mut self) -> bool {
