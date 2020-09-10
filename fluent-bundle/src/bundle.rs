@@ -3,7 +3,6 @@ use crate::resolve::ResolveValue;
 use crate::resource::FluentResource;
 use crate::FluentError;
 use fluent_syntax::ast;
-use fluent_syntax::parser::Slice;
 use std::borrow::Borrow;
 use std::fmt;
 
@@ -56,7 +55,7 @@ impl<R, M> FluentBundle<R, M> {
         pattern: &ast::Pattern<S>,
     ) -> fmt::Result
     where
-        S: Slice<'bundle>,
+        S: AsRef<str>,
     {
         pattern.write(w)
     }

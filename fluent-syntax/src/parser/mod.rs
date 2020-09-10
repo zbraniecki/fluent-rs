@@ -1,5 +1,4 @@
 use crate::ast;
-use std::fmt;
 use std::ops::Range;
 use std::result;
 
@@ -7,29 +6,14 @@ use std::result;
 mod errors;
 pub use errors::{ErrorKind, ParserError};
 
-pub trait Slice<'s>: PartialEq<&'s str> + Clone + PartialEq {
+pub trait Slice<'s> {
     fn slice(&self, range: Range<usize>) -> Self;
-    fn write<W: fmt::Write>(&self, w: &mut W) -> fmt::Result;
-    fn get_char(&self, idx: usize) -> Option<&u8>;
-    fn length(&self) -> usize;
     fn trim(&mut self);
 }
 
 impl<'s> Slice<'s> for String {
     fn slice(&self, range: Range<usize>) -> String {
         self[range].to_string()
-    }
-
-    fn write<W: fmt::Write>(&self, w: &mut W) -> fmt::Result {
-        w.write_str(&self)
-    }
-
-    fn get_char(&self, idx: usize) -> Option<&u8> {
-        self.as_bytes().get(idx)
-    }
-
-    fn length(&self) -> usize {
-        self.len()
     }
 
     fn trim(&mut self) {
@@ -40,18 +24,6 @@ impl<'s> Slice<'s> for String {
 impl<'s> Slice<'s> for &'s str {
     fn slice(&self, range: Range<usize>) -> &'s str {
         &self[range]
-    }
-
-    fn write<W: fmt::Write>(&self, w: &mut W) -> fmt::Result {
-        w.write_str(self)
-    }
-
-    fn get_char(&self, idx: usize) -> Option<&u8> {
-        self.as_bytes().get(idx)
-    }
-
-    fn length(&self) -> usize {
-        self.len()
     }
 
     fn trim(&mut self) {
@@ -105,10 +77,10 @@ pub struct Parser<S> {
 
 impl<'s, S> Parser<S>
 where
-    S: Slice<'s>,
+    S: AsRef<str> + Slice<'s> + Clone + PartialEq,
 {
     pub fn new(source: S) -> Self {
-        let length = source.length();
+        let length = source.as_ref().len();
         Self {
             source,
             ptr: 0,
@@ -174,7 +146,7 @@ where
     }
 
     fn get_entry(&mut self, entry_start: usize) -> Result<ast::Entry<S>> {
-        let entry = match self.source.get_char(self.ptr) {
+        let entry = match self.source.as_ref().as_bytes().get(self.ptr) {
             Some(b'#') => ast::Entry::Comment(self.get_comment()?),
             Some(b'-') => ast::Entry::Term(self.get_term(entry_start)?),
             _ => ast::Entry::Message(self.get_message(entry_start)?),
@@ -193,8 +165,7 @@ where
         let attributes = self.get_attributes();
 
         if pattern.is_none() && attributes.is_empty() {
-            let mut entry_id = String::new();
-            id.name.write(&mut entry_id).unwrap();
+            let entry_id = id.name.as_ref().to_owned();
             return error!(
                 ErrorKind::ExpectedMessageField { entry_id },
                 entry_start, self.ptr
@@ -230,10 +201,10 @@ where
                 comment: None,
             })
         } else {
-            let mut entry_id = String::new();
-            id.name.write(&mut entry_id).unwrap();
             error!(
-                ErrorKind::ExpectedTermField { entry_id },
+                ErrorKind::ExpectedTermField {
+                    entry_id: id.name.as_ref().to_owned()
+                },
                 entry_start, self.ptr
             )
         }
@@ -277,7 +248,7 @@ where
     fn get_identifier(&mut self) -> Result<ast::Identifier<S>> {
         let mut ptr = self.ptr;
 
-        match self.source.get_char(ptr) {
+        match self.source.as_ref().as_bytes().get(ptr) {
             Some(b) if b.is_ascii_alphabetic() => {
                 ptr += 1;
             }
@@ -291,7 +262,7 @@ where
             }
         }
 
-        while let Some(b) = self.source.get_char(ptr) {
+        while let Some(b) = self.source.as_ref().as_bytes().get(ptr) {
             if b.is_ascii_alphabetic() || b.is_ascii_digit() || [b'_', b'-'].contains(b) {
                 ptr += 1;
             } else {
@@ -406,7 +377,7 @@ where
                     if self.ptr >= self.length {
                         break;
                     }
-                    let b = self.source.get_char(self.ptr);
+                    let b = self.source.as_ref().as_bytes().get(self.ptr);
                     if indent == 0 {
                         if b != Some(&b'\n') {
                             break;
@@ -495,7 +466,7 @@ where
         let start_pos = self.ptr;
         let mut text_element_type = TextElementType::Blank;
 
-        while let Some(b) = self.source.get_char(self.ptr) {
+        while let Some(b) = self.source.as_ref().as_bytes().get(self.ptr) {
             match b {
                 b' ' => self.ptr += 1,
                 b'\n' => {
@@ -683,13 +654,13 @@ where
     }
 
     fn get_inline_expression(&mut self) -> Result<ast::InlineExpression<S>> {
-        match self.source.get_char(self.ptr) {
+        match self.source.as_ref().as_bytes().get(self.ptr) {
             Some(b'"') => {
                 self.ptr += 1; // "
                 let start = self.ptr;
-                while let Some(b) = self.source.get_char(self.ptr) {
+                while let Some(b) = self.source.as_ref().as_bytes().get(self.ptr) {
                     match b {
-                        b'\\' => match self.source.get_char(self.ptr + 1) {
+                        b'\\' => match self.source.as_ref().as_bytes().get(self.ptr + 1) {
                             Some(b'\\') => self.ptr += 2,
                             Some(b'{') => self.ptr += 2,
                             Some(b'"') => self.ptr += 2,
@@ -747,9 +718,7 @@ where
                 let id = self.get_identifier()?;
                 let arguments = self.get_call_arguments()?;
                 if arguments.is_some() {
-                    let mut id_name = String::new();
-                    id.name.write(&mut id_name).unwrap();
-                    if !id_name.bytes().all(|c| {
+                    if !id.name.as_ref().bytes().all(|c| {
                         c.is_ascii_uppercase() || c.is_ascii_digit() || c == b'_' || c == b'-'
                     }) {
                         return error!(ErrorKind::ForbiddenCallee, self.ptr);
@@ -797,10 +766,11 @@ where
                 } => {
                     self.skip_blank();
                     if self.is_current_byte(b':') {
-                        let mut id_name = String::new();
-                        id.name.write(&mut id_name).unwrap();
                         if argument_names.contains(&id.name) {
-                            return error!(ErrorKind::DuplicatedNamedArgument(id_name), self.ptr);
+                            return error!(
+                                ErrorKind::DuplicatedNamedArgument(id.name.as_ref().to_owned()),
+                                self.ptr
+                            );
                         }
                         self.ptr += 1;
                         self.skip_blank();
@@ -852,16 +822,17 @@ where
     // *************************
 
     pub fn is_current_byte(&self, b: u8) -> bool {
-        self.source.get_char(self.ptr) == Some(&b)
+        self.source.as_ref().as_bytes().get(self.ptr) == Some(&b)
     }
 
     fn is_byte_at(&self, b: u8, pos: usize) -> bool {
-        self.source.get_char(pos) == Some(&b)
+        self.source.as_ref().as_bytes().get(pos) == Some(&b)
     }
 
     fn skip_to_next_entry_start(&mut self) {
-        while let Some(b) = self.source.get_char(self.ptr) {
-            let new_line = self.ptr == 0 || self.source.get_char(self.ptr - 1) == Some(&b'\n');
+        while let Some(b) = self.source.as_ref().as_bytes().get(self.ptr) {
+            let new_line =
+                self.ptr == 0 || self.source.as_ref().as_bytes().get(self.ptr - 1) == Some(&b'\n');
 
             if new_line && (b.is_ascii_alphabetic() || [b'-', b'#'].contains(b)) {
                 break;
@@ -872,7 +843,7 @@ where
     }
 
     fn skip_eol(&mut self) -> bool {
-        match self.source.get_char(self.ptr) {
+        match self.source.as_ref().as_bytes().get(self.ptr) {
             Some(b'\n') => {
                 self.ptr += 1;
                 true
@@ -888,7 +859,7 @@ where
     fn skip_unicode_escape_sequence(&mut self, length: usize) -> Result<()> {
         let start = self.ptr;
         for _ in 0..length {
-            match self.source.get_char(self.ptr) {
+            match self.source.as_ref().as_bytes().get(self.ptr) {
                 Some(b) if b.is_ascii_hexdigit() => self.ptr += 1,
                 _ => break,
             }
@@ -899,15 +870,14 @@ where
             } else {
                 self.ptr + 1
             };
-            let mut seq = String::new();
-            self.source.slice(start..end).write(&mut seq).unwrap();
+            let seq = self.source.slice(start..end).as_ref().to_owned();
             return error!(ErrorKind::InvalidUnicodeEscapeSequence(seq), self.ptr);
         }
         Ok(())
     }
 
     fn is_identifier_start(&self) -> bool {
-        match self.source.get_char(self.ptr) {
+        match self.source.as_ref().as_bytes().get(self.ptr) {
             Some(b) if b.is_ascii_alphabetic() => true,
             _ => false,
         }
@@ -938,10 +908,14 @@ where
 
     fn skip_blank(&mut self) {
         loop {
-            match self.source.get_char(self.ptr) {
+            match self.source.as_ref().as_bytes().get(self.ptr) {
                 Some(b' ') => self.ptr += 1,
                 Some(b'\n') => self.ptr += 1,
-                Some(b'\r') if self.source.get_char(self.ptr + 1) == Some(&b'\n') => self.ptr += 2,
+                Some(b'\r')
+                    if self.source.as_ref().as_bytes().get(self.ptr + 1) == Some(&b'\n') =>
+                {
+                    self.ptr += 2
+                }
                 _ => break,
             }
         }
@@ -949,7 +923,7 @@ where
 
     fn skip_blank_inline(&mut self) -> usize {
         let start = self.ptr;
-        while let Some(b' ') = self.source.get_char(self.ptr) {
+        while let Some(b' ') = self.source.as_ref().as_bytes().get(self.ptr) {
             self.ptr += 1;
         }
         self.ptr - start
@@ -968,14 +942,14 @@ where
     }
 
     fn is_number_start(&self) -> bool {
-        match self.source.get_char(self.ptr) {
+        match self.source.as_ref().as_bytes().get(self.ptr) {
             Some(b) if (b == &b'-') || b.is_ascii_digit() => true,
             _ => false,
         }
     }
 
     fn is_eol(&self) -> bool {
-        match self.source.get_char(self.ptr) {
+        match self.source.as_ref().as_bytes().get(self.ptr) {
             Some(b'\n') => true,
             Some(b'\r') if self.is_byte_at(b'\n', self.ptr + 1) => true,
             _ => false,
@@ -985,7 +959,7 @@ where
     fn skip_digits(&mut self) -> Result<()> {
         let start = self.ptr;
         loop {
-            match self.source.get_char(self.ptr) {
+            match self.source.as_ref().as_bytes().get(self.ptr) {
                 Some(b) if b.is_ascii_digit() => self.ptr += 1,
                 _ => break,
             }
