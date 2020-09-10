@@ -20,24 +20,24 @@ fn main() {
         Err((ast, err)) => (ast, Some(err)),
     };
 
-    #[cfg(feature = "json")]
-    {
-        use fluent_syntax::json;
-        let target_json = json::serialize_to_pretty_json(&ast).unwrap();
-        println!("{}", target_json);
-    }
-    #[cfg(not(feature = "json"))]
-    {
-        use std::fmt::Write;
-        let mut result = String::new();
-        write!(result, "{:#?}", ast).unwrap();
-        println!("{}", result);
-    }
+    // #[cfg(feature = "json")]
+    // {
+    //     use fluent_syntax::json;
+    //     let target_json = json::serialize_to_pretty_json(&ast).unwrap();
+    //     println!("{}", target_json);
+    // }
+    // #[cfg(not(feature = "json"))]
+    // {
+    //     use std::fmt::Write;
+    //     let mut result = String::new();
+    //     write!(result, "{:#?}", ast).unwrap();
+    //     println!("{}", result);
+    // }
 
-    if let Some(errors) = errors {
-        println!("\n======== Errors ========== \n");
-        for err in errors {
-            println!("Err: {:#?}", err);
-        }
-    }
+    // if let Some(errors) = errors {
+    //     println!("\n======== Errors ========== \n");
+    //     for err in errors {
+    //         println!("Err: {:#?}", err);
+    //     }
+    // }
 }
