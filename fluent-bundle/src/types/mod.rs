@@ -10,31 +10,28 @@ use plural::PluralRules;
 use std::fmt;
 use std::str::FromStr;
 
-pub trait FluentType {
-    fn write(
-        &self,
-        w: &mut impl fmt::Write,
-        intls: &intl_memoizer::IntlLangMemoizer,
-    ) -> fmt::Result;
-}
-#[derive(Debug, Clone)]
+pub trait FluentType: fmt::Debug + fmt::Display {}
+
+#[derive(Debug)]
 pub enum FluentValue<S> {
     String(S),
     Number(FluentNumber),
-    // Custom(Box<dyn FluentType + Send>),
+    Custom(Box<dyn FluentType + Send>),
     // Error(DisplayableNode<'source>),
     // None,
 }
 
 impl<S> FluentValue<S> {
-    pub fn write<W>(&self, w: &mut W) -> fmt::Result
+    pub fn write<W, R, M, A>(&self, w: &mut W, scope: &Scope<R, M, A>) -> fmt::Result
     where
         W: fmt::Write,
+        M: MemoizerKind,
         S: AsRef<str>,
     {
         match self {
             FluentValue::String(s) => w.write_str(s.as_ref()),
             FluentValue::Number(num) => num.write(w),
+            FluentValue::Custom(s) => scope.bundle.intls.write(w, &**s),
         }
     }
 
@@ -45,6 +42,7 @@ impl<S> FluentValue<S> {
         match self {
             FluentValue::String(s) => FluentValue::String(s.as_ref()),
             FluentValue::Number(n) => FluentValue::Number(n.clone()),
+            FluentValue::Custom(n) => unimplemented!(),
         }
     }
 

@@ -1,3 +1,4 @@
+use crate::types::FluentType;
 use intl_memoizer::{IntlLangMemoizer, Memoizable};
 use std::fmt;
 use unic_langid::LanguageIdentifier;
@@ -14,7 +15,7 @@ pub trait MemoizerKind: 'static {
         I::Args: Send + Sync + 'static,
         U: FnOnce(&I) -> R;
 
-    fn write<W>(&self, w: &mut W) -> fmt::Result
+    fn write<W>(&self, w: &mut W, value: &dyn FluentType) -> fmt::Result
     where
         W: fmt::Write;
 }
@@ -37,7 +38,7 @@ impl MemoizerKind for IntlLangMemoizer {
         self.with_try_get(args, cb)
     }
 
-    fn write<W>(&self, w: &mut W) -> fmt::Result
+    fn write<W>(&self, w: &mut W, value: &dyn FluentType) -> fmt::Result
     where
         W: fmt::Write,
     {

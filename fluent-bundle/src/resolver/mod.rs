@@ -170,7 +170,7 @@ where
                 if let Some(args) = &scope.args {
                     let arg = args.get(id.name.as_ref());
                     if let Some(arg) = arg {
-                        arg.write(w)
+                        arg.write(w, scope)
                     } else {
                         w.write_str("???")
                     }

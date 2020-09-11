@@ -1,10 +1,10 @@
 mod args;
 mod bundle;
 mod errors;
-mod memoizer;
+pub mod memoizer;
 mod resolver;
 mod resource;
-mod types;
+pub mod types;
 
 #[macro_use]
 extern crate rental;
