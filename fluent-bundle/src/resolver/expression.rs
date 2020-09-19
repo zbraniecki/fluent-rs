@@ -4,22 +4,23 @@ use super::WriteValue;
 use std::borrow::Borrow;
 use std::fmt;
 
-use fluent_syntax::ast;
+use fluent_syntax::{ast, parser::Slice};
 
 use crate::memoizer::MemoizerKind;
 use crate::resolver::{ResolveValue, ResolverError};
 use crate::resource::FluentResource;
 use crate::types::FluentValue;
 
-impl<'p> WriteValue for ast::Expression<&'p str> {
+impl<S> WriteValue<S> for ast::Expression<S> {
     fn write<'scope, 'errors, W, R, M: MemoizerKind>(
         &'scope self,
         w: &mut W,
-        scope: &mut Scope<'scope, 'errors, R, M>,
+        scope: &mut Scope<'scope, 'errors, R, M, S>,
     ) -> fmt::Result
     where
         W: fmt::Write,
         R: Borrow<FluentResource>,
+        S: Slice<'scope>,
     {
         match self {
             ast::Expression::InlineExpression(exp) => exp.write(w, scope),
@@ -28,8 +29,9 @@ impl<'p> WriteValue for ast::Expression<&'p str> {
                 match selector {
                     FluentValue::String(_) | FluentValue::Number(_) => {
                         for variant in variants {
-                            let key = match variant.key {
-                                ast::VariantKey::Identifier { name } => name.into(),
+                            let key = match &variant.key {
+                                // ast::VariantKey::Identifier { name } => name.into(),
+                                ast::VariantKey::Identifier { name } => panic!(),
                                 ast::VariantKey::NumberLiteral { value } => {
                                     FluentValue::try_number(value)
                                 }
@@ -53,9 +55,10 @@ impl<'p> WriteValue for ast::Expression<&'p str> {
         }
     }
 
-    fn write_error<W>(&self, w: &mut W) -> fmt::Result
+    fn write_error<'scope, W>(&self, w: &mut W) -> fmt::Result
     where
         W: fmt::Write,
+        S: Slice<'scope>,
     {
         match self {
             ast::Expression::InlineExpression(exp) => exp.write_error(w),

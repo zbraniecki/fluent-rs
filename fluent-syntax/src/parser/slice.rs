@@ -1,7 +1,10 @@
 use std::ops::Range;
-pub trait Slice<'s>: AsRef<str> + Clone + PartialEq {
+use std::fmt;
+
+pub trait Slice<'s>: AsRef<str> + Clone + PartialEq + fmt::Display {
     fn slice(&self, range: Range<usize>) -> Self;
     fn trim(&mut self);
+    fn as_str(&self) -> &str;
 }
 
 impl<'s> Slice<'s> for String {
@@ -12,6 +15,10 @@ impl<'s> Slice<'s> for String {
     fn trim(&mut self) {
         *self = self.trim_end().to_string();
     }
+
+    fn as_str(&self) -> &str {
+        self.as_str()
+    }
 }
 
 impl<'s> Slice<'s> for &'s str {
@@ -21,5 +28,9 @@ impl<'s> Slice<'s> for &'s str {
 
     fn trim(&mut self) {
         *self = self.trim_end();
+    }
+
+    fn as_str(&self) -> &str {
+        self
     }
 }

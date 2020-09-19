@@ -3,12 +3,12 @@ use crate::memoizer::MemoizerKind;
 use crate::resolver::{ResolveValue, ResolverError, WriteValue};
 use crate::types::FluentValue;
 use crate::{FluentArgs, FluentError, FluentResource};
-use fluent_syntax::ast;
+use fluent_syntax::{ast, parser::Slice};
 use std::borrow::Borrow;
 use std::fmt;
 
 /// State for a single `ResolveValue::to_value` call.
-pub struct Scope<'scope, 'errors, R, M> {
+pub struct Scope<'scope, 'errors, R, M, S> {
     /// The current `FluentBundleBase` instance.
     pub bundle: &'scope FluentBundleBase<R, M>,
     /// The current arguments passed by the developer.
@@ -19,14 +19,14 @@ pub struct Scope<'scope, 'errors, R, M> {
     /// Laughs and Quadratic Blowup attacks.
     pub(super) placeables: u8,
     /// Tracks hashes to prevent infinite recursion.
-    travelled: smallvec::SmallVec<[&'scope ast::Pattern<&'scope str>; 2]>,
+    travelled: smallvec::SmallVec<[&'scope ast::Pattern<S>; 2]>,
     /// Track errors accumulated during resolving.
     pub errors: Option<&'errors mut Vec<FluentError>>,
     /// Makes the resolver bail.
     pub dirty: bool,
 }
 
-impl<'scope, 'errors, R, M: MemoizerKind> Scope<'scope, 'errors, R, M> {
+impl<'scope, 'errors, R, M: MemoizerKind, S> Scope<'scope, 'errors, R, M, S> {
     pub fn new(
         bundle: &'scope FluentBundleBase<R, M>,
         args: Option<&'scope FluentArgs>,
@@ -58,12 +58,13 @@ impl<'scope, 'errors, R, M: MemoizerKind> Scope<'scope, 'errors, R, M> {
     pub fn maybe_track<W>(
         &mut self,
         w: &mut W,
-        pattern: &'scope ast::Pattern<&str>,
-        exp: &'scope ast::Expression<&str>,
+        pattern: &'scope ast::Pattern<S>,
+        exp: &'scope ast::Expression<S>,
     ) -> fmt::Result
     where
         R: Borrow<FluentResource>,
         W: fmt::Write,
+        S: Slice<'scope>,
     {
         if self.travelled.is_empty() {
             self.travelled.push(pattern);
@@ -81,12 +82,13 @@ impl<'scope, 'errors, R, M: MemoizerKind> Scope<'scope, 'errors, R, M> {
     pub fn track<W>(
         &mut self,
         w: &mut W,
-        pattern: &'scope ast::Pattern<&str>,
-        exp: &ast::InlineExpression<&str>,
+        pattern: &'scope ast::Pattern<S>,
+        exp: &ast::InlineExpression<S>,
     ) -> fmt::Result
     where
         R: Borrow<FluentResource>,
         W: fmt::Write,
+        S: Slice<'scope>,
     {
         if self.travelled.contains(&pattern) {
             self.add_error(ResolverError::Cyclic);
@@ -101,13 +103,10 @@ impl<'scope, 'errors, R, M: MemoizerKind> Scope<'scope, 'errors, R, M> {
         }
     }
 
-    pub fn write_ref_error<W>(
-        &mut self,
-        w: &mut W,
-        exp: &ast::InlineExpression<&str>,
-    ) -> fmt::Result
+    pub fn write_ref_error<W>(&mut self, w: &mut W, exp: &ast::InlineExpression<S>) -> fmt::Result
     where
         W: fmt::Write,
+        S: Slice<'scope>,
     {
         self.add_error(ResolverError::Reference(exp.resolve_error()));
         w.write_char('{')?;
@@ -117,10 +116,11 @@ impl<'scope, 'errors, R, M: MemoizerKind> Scope<'scope, 'errors, R, M> {
 
     pub fn get_arguments(
         &mut self,
-        arguments: &'scope Option<ast::CallArguments<&'scope str>>,
+        arguments: &'scope Option<ast::CallArguments<S>>,
     ) -> (Vec<FluentValue<'scope>>, FluentArgs<'scope>)
     where
         R: Borrow<FluentResource>,
+        S: Slice<'scope>,
     {
         let mut resolved_positional_args = Vec::new();
         let mut resolved_named_args = FluentArgs::new();
@@ -131,7 +131,7 @@ impl<'scope, 'errors, R, M: MemoizerKind> Scope<'scope, 'errors, R, M> {
             }
 
             for arg in named {
-                resolved_named_args.add(arg.name.name, arg.value.resolve(self));
+                resolved_named_args.add(arg.name.name.as_str(), arg.value.resolve(self));
             }
         }
 

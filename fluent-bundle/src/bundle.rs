@@ -10,9 +10,10 @@ use std::collections::hash_map::{Entry as HashEntry, HashMap};
 use std::default::Default;
 use std::fmt;
 
-use fluent_syntax::ast;
+use fluent_syntax::{ast, parser::Slice};
 use unic_langid::LanguageIdentifier;
 
+use crate::args::FluentArgs;
 use crate::entry::Entry;
 use crate::entry::GetEntry;
 use crate::errors::FluentError;
@@ -20,7 +21,6 @@ use crate::memoizer::MemoizerKind;
 use crate::resolver::{ResolveValue, Scope, WriteValue};
 use crate::resource::FluentResource;
 use crate::types::FluentValue;
-use crate::args::FluentArgs;
 
 /// A single localization unit composed of an identifier,
 /// value, and attributes.
@@ -425,16 +425,17 @@ impl<R, M: MemoizerKind> FluentBundleBase<R, M> {
         Some(FluentMessage { value, attributes })
     }
 
-    pub fn write_pattern<'bundle, W>(
+    pub fn write_pattern<'bundle, W, S>(
         &'bundle self,
         w: &mut W,
-        pattern: &'bundle ast::Pattern<&str>,
+        pattern: &'bundle ast::Pattern<S>,
         args: Option<&'bundle FluentArgs>,
         errors: &mut Vec<FluentError>,
     ) -> fmt::Result
     where
         R: Borrow<FluentResource>,
         W: fmt::Write,
+        S: Slice<'bundle>,
     {
         let mut scope = Scope::new(self, args, Some(errors));
         pattern.write(w, &mut scope)

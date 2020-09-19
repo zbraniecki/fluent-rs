@@ -4,7 +4,7 @@ use super::{ResolverError, WriteValue};
 use std::borrow::Borrow;
 use std::fmt;
 
-use fluent_syntax::ast;
+use fluent_syntax::{ast, parser::Slice};
 
 use crate::memoizer::MemoizerKind;
 use crate::resolver::ResolveValue;
@@ -13,15 +13,16 @@ use crate::types::FluentValue;
 
 const MAX_PLACEABLES: u8 = 100;
 
-impl<'p> WriteValue for ast::Pattern<&'p str> {
+impl<S> WriteValue<S> for ast::Pattern<S> {
     fn write<'scope, 'errors, W, R, M: MemoizerKind>(
         &'scope self,
         w: &mut W,
-        scope: &mut Scope<'scope, 'errors, R, M>,
+        scope: &mut Scope<'scope, 'errors, R, M, S>,
     ) -> fmt::Result
     where
         W: fmt::Write,
         R: Borrow<FluentResource>,
+        S: Slice<'scope>,
     {
         let len = self.elements.len();
 
@@ -33,9 +34,9 @@ impl<'p> WriteValue for ast::Pattern<&'p str> {
             match elem {
                 ast::PatternElement::TextElement { value } => {
                     if let Some(ref transform) = scope.bundle.transform {
-                        w.write_str(&transform(value))?;
+                        w.write_str(&transform(value.as_str()))?;
                     } else {
-                        w.write_str(value)?;
+                        w.write_str(value.as_str())?;
                     }
                 }
                 ast::PatternElement::Placeable { ref expression } => {
@@ -73,30 +74,32 @@ impl<'p> WriteValue for ast::Pattern<&'p str> {
         Ok(())
     }
 
-    fn write_error<W>(&self, _w: &mut W) -> fmt::Result
+    fn write_error<'scope, W>(&self, _w: &mut W) -> fmt::Result
     where
         W: fmt::Write,
+        S: Slice<'scope>,
     {
         unreachable!()
     }
 }
 
-impl<'p> ResolveValue for ast::Pattern<&'p str> {
+impl<S> ResolveValue<S> for ast::Pattern<S> {
     fn resolve<'source, 'errors, R, M: MemoizerKind>(
         &'source self,
-        scope: &mut Scope<'source, 'errors, R, M>,
+        scope: &mut Scope<'source, 'errors, R, M, S>,
     ) -> FluentValue<'source>
     where
         R: Borrow<FluentResource>,
+        S: Slice<'source>,
     {
         let len = self.elements.len();
 
         if len == 1 {
-            if let ast::PatternElement::TextElement { value } = self.elements[0] {
-                return scope
-                    .bundle
-                    .transform
-                    .map_or_else(|| value.into(), |transform| transform(value).into());
+            if let ast::PatternElement::TextElement { ref value } = self.elements[0] {
+                return scope.bundle.transform.map_or_else(
+                    || value.as_str().into(),
+                    |transform| transform(value.as_str()).into(),
+                );
             }
         }
 
@@ -106,7 +109,10 @@ impl<'p> ResolveValue for ast::Pattern<&'p str> {
         result.into()
     }
 
-    fn resolve_error(&self) -> String {
+    fn resolve_error<'scope>(&self) -> String
+    where
+        S: Slice<'scope>,
+    {
         unreachable!()
     }
 }

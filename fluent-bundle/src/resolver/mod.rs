@@ -18,33 +18,40 @@ pub use scope::Scope;
 use std::borrow::Borrow;
 use std::fmt;
 
+use fluent_syntax::parser::Slice;
+
 use crate::memoizer::MemoizerKind;
 use crate::resource::FluentResource;
 use crate::types::FluentValue;
 
 // Converts an AST node to a `FluentValue`.
-pub(crate) trait ResolveValue {
+pub(crate) trait ResolveValue<S> {
     fn resolve<'source, 'errors, R, M: MemoizerKind>(
         &'source self,
-        scope: &mut Scope<'source, 'errors, R, M>,
+        scope: &mut Scope<'source, 'errors, R, M, S>,
     ) -> FluentValue<'source>
     where
-        R: Borrow<FluentResource>;
+        R: Borrow<FluentResource>,
+        S: Slice<'source>;
 
-    fn resolve_error(&self) -> String;
+    fn resolve_error<'source>(&self) -> String
+    where
+        S: Slice<'source>;
 }
 
-pub(crate) trait WriteValue {
+pub(crate) trait WriteValue<S> {
     fn write<'source, 'errors, W, R, M: MemoizerKind>(
         &'source self,
         w: &mut W,
-        scope: &mut Scope<'source, 'errors, R, M>,
+        scope: &mut Scope<'source, 'errors, R, M, S>,
     ) -> fmt::Result
     where
         W: fmt::Write,
-        R: Borrow<FluentResource>;
+        R: Borrow<FluentResource>,
+        S: Slice<'source>;
 
-    fn write_error<W>(&self, _w: &mut W) -> fmt::Result
+    fn write_error<'source, W>(&self, w: &mut W) -> fmt::Result
     where
-        W: fmt::Write;
+        W: fmt::Write,
+        S: Slice<'source>;
 }

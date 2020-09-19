@@ -4,42 +4,45 @@ use super::{ResolveValue, ResolverError, WriteValue};
 use std::borrow::Borrow;
 use std::fmt;
 
-use fluent_syntax::ast;
 use fluent_syntax::unicode::{unescape_unicode, unescape_unicode_to_string};
+use fluent_syntax::{ast, parser::Slice};
 
 use crate::entry::GetEntry;
 use crate::memoizer::MemoizerKind;
 use crate::resource::FluentResource;
 use crate::types::FluentValue;
 
-impl<'p> WriteValue for ast::InlineExpression<&'p str> {
+impl<S> WriteValue<S> for ast::InlineExpression<S> {
     fn write<'scope, 'errors, W, R, M: MemoizerKind>(
         &'scope self,
         w: &mut W,
-        scope: &mut Scope<'scope, 'errors, R, M>,
+        scope: &mut Scope<'scope, 'errors, R, M, S>,
     ) -> fmt::Result
     where
         W: fmt::Write,
         R: Borrow<FluentResource>,
+        S: Slice<'scope>,
     {
         match self {
-            ast::InlineExpression::StringLiteral { value } => unescape_unicode(w, value),
+            ast::InlineExpression::StringLiteral { value } => unescape_unicode(w, value.as_str()),
             ast::InlineExpression::MessageReference { id, attribute } => scope
                 .bundle
-                .get_entry_message(&id.name)
+                .get_entry_message(id.name.as_str())
                 .and_then(|msg| {
                     if let Some(attr) = attribute {
-                        msg.attributes
-                            .iter()
-                            .find(|a| a.id.name == attr.name)
-                            .map(|attr| scope.track(w, &attr.value, self))
+                        // msg.attributes
+                        //     .iter()
+                        //     .find(|a| a.id.name == attr.name.as_str())
+                        //     .map(|attr| scope.track(w, attr.value, self))
+                        panic!();
                     } else {
-                        msg.value.as_ref().map(|value| scope.track(w, value, self))
+                        panic!();
+                        //msg.value.as_ref().map(|value| scope.track(w, value, self))
                     }
                 })
                 .unwrap_or_else(|| scope.write_ref_error(w, self)),
             ast::InlineExpression::NumberLiteral { value } => {
-                FluentValue::try_number(*value).write(w, scope)
+                FluentValue::try_number(value).write(w, scope)
             }
             ast::InlineExpression::TermReference {
                 id,
@@ -48,29 +51,30 @@ impl<'p> WriteValue for ast::InlineExpression<&'p str> {
             } => {
                 let (_, resolved_named_args) = scope.get_arguments(arguments);
 
-                scope.local_args = Some(resolved_named_args);
-                let result = scope
-                    .bundle
-                    .get_entry_term(&id.name)
-                    .and_then(|term| {
-                        if let Some(attr) = attribute {
-                            term.attributes
-                                .iter()
-                                .find(|a| a.id.name == attr.name)
-                                .map(|attr| scope.track(w, &attr.value, self))
-                        } else {
-                            Some(scope.track(w, &term.value, self))
-                        }
-                    })
-                    .unwrap_or_else(|| scope.write_ref_error(w, self));
-                scope.local_args = None;
-                result
+                panic!();
+                // scope.local_args = Some(resolved_named_args);
+                // let result = scope
+                //     .bundle
+                //     .get_entry_term(&id.name)
+                //     .and_then(|term| {
+                //         if let Some(attr) = attribute {
+                //             term.attributes
+                //                 .iter()
+                //                 .find(|a| a.id.name == attr.name)
+                //                 .map(|attr| scope.track(w, &attr.value, self))
+                //         } else {
+                //             Some(scope.track(w, &term.value, self))
+                //         }
+                //     })
+                //     .unwrap_or_else(|| scope.write_ref_error(w, self));
+                // scope.local_args = None;
+                // result
             }
             ast::InlineExpression::FunctionReference { id, arguments } => {
                 let (resolved_positional_args, resolved_named_args) =
                     scope.get_arguments(arguments);
 
-                let func = scope.bundle.get_entry_function(id.name);
+                let func = scope.bundle.get_entry_function(id.name.as_str());
 
                 if let Some(func) = func {
                     let result = func(resolved_positional_args.as_slice(), &resolved_named_args);
@@ -86,7 +90,7 @@ impl<'p> WriteValue for ast::InlineExpression<&'p str> {
             ast::InlineExpression::VariableReference { id } => {
                 let args = scope.local_args.as_ref().or(scope.args);
 
-                if let Some(arg) = args.and_then(|args| args.get(id.name)) {
+                if let Some(arg) = args.and_then(|args| args.get(id.name.as_str())) {
                     arg.write(w, scope)
                 } else {
                     if scope.local_args.is_none() {
@@ -101,9 +105,10 @@ impl<'p> WriteValue for ast::InlineExpression<&'p str> {
         }
     }
 
-    fn write_error<W>(&self, w: &mut W) -> fmt::Result
+    fn write_error<'scope, W>(&self, w: &mut W) -> fmt::Result
     where
         W: fmt::Write,
+        S: Slice<'scope>,
     {
         match self {
             ast::InlineExpression::MessageReference {
@@ -113,7 +118,7 @@ impl<'p> WriteValue for ast::InlineExpression<&'p str> {
             ast::InlineExpression::MessageReference {
                 id,
                 attribute: None,
-            } => w.write_str(id.name),
+            } => w.write_str(id.name.as_str()),
             ast::InlineExpression::TermReference {
                 id,
                 attribute: Some(attribute),
@@ -131,23 +136,24 @@ impl<'p> WriteValue for ast::InlineExpression<&'p str> {
     }
 }
 
-impl<'p> ResolveValue for ast::InlineExpression<&'p str> {
+impl<S> ResolveValue<S> for ast::InlineExpression<S> {
     fn resolve<'source, 'errors, R, M: MemoizerKind>(
         &'source self,
-        scope: &mut Scope<'source, 'errors, R, M>,
+        scope: &mut Scope<'source, 'errors, R, M, S>,
     ) -> FluentValue<'source>
     where
         R: Borrow<FluentResource>,
+        S: Slice<'source>,
     {
         match self {
             ast::InlineExpression::StringLiteral { value } => {
-                unescape_unicode_to_string(value).into()
+                unescape_unicode_to_string(value.as_str()).into()
             }
-            ast::InlineExpression::NumberLiteral { value } => FluentValue::try_number(*value),
+            ast::InlineExpression::NumberLiteral { value } => FluentValue::try_number(value),
             ast::InlineExpression::VariableReference { id } => {
                 let args = scope.local_args.as_ref().or(scope.args);
 
-                if let Some(arg) = args.and_then(|args| args.get(id.name)) {
+                if let Some(arg) = args.and_then(|args| args.get(id.name.as_str())) {
                     arg.clone()
                 } else {
                     if scope.local_args.is_none() {
@@ -164,7 +170,10 @@ impl<'p> ResolveValue for ast::InlineExpression<&'p str> {
         }
     }
 
-    fn resolve_error(&self) -> String {
+    fn resolve_error<'source>(&self) -> String
+    where
+        S: Slice<'source>,
+    {
         match self {
             ast::InlineExpression::MessageReference {
                 attribute: None, ..

@@ -96,19 +96,20 @@ impl<'s> Clone for FluentValue<'s> {
 }
 
 impl<'source> FluentValue<'source> {
-    pub fn try_number<S: ToString>(v: S) -> Self {
-        let s = v.to_string();
-        if let Ok(num) = FluentNumber::from_str(&s) {
+    pub fn try_number<S: AsRef<str>>(v: S) -> Self {
+        let s = v.as_ref();
+        if let Ok(num) = FluentNumber::from_str(s) {
             num.into()
         } else {
-            s.into()
+            panic!();
+            //s.into()
         }
     }
 
-    pub fn matches<R: Borrow<FluentResource>, M: MemoizerKind>(
+    pub fn matches<R: Borrow<FluentResource>, M: MemoizerKind, S>(
         &self,
         other: &FluentValue,
-        scope: &Scope<R, M>,
+        scope: &Scope<R, M, S>,
     ) -> bool {
         match (self, other) {
             (&FluentValue::String(ref a), &FluentValue::String(ref b)) => a == b,
@@ -136,7 +137,7 @@ impl<'source> FluentValue<'source> {
         }
     }
 
-    pub fn write<W, R, M>(&self, w: &mut W, scope: &Scope<R, M>) -> fmt::Result
+    pub fn write<W, R, M, S>(&self, w: &mut W, scope: &Scope<R, M, S>) -> fmt::Result
     where
         W: fmt::Write,
         R: Borrow<FluentResource>,
@@ -156,9 +157,9 @@ impl<'source> FluentValue<'source> {
         }
     }
 
-    pub fn as_string<R: Borrow<FluentResource>, M: MemoizerKind>(
+    pub fn as_string<R: Borrow<FluentResource>, M: MemoizerKind, S>(
         &self,
-        scope: &Scope<R, M>,
+        scope: &Scope<R, M, S>,
     ) -> Cow<'source, str> {
         if let Some(formatter) = &scope.bundle.formatter {
             if let Some(val) = formatter(self, &scope.bundle.intls) {

@@ -15,7 +15,10 @@ rental! {
 
 /// A resource containing a list of localization messages.
 #[derive(Debug)]
-pub struct FluentResource(rentals::FluentResource);
+pub enum FluentResource {
+    Owned(ast::Resource<String>),
+    Sliced(rentals::FluentResource),
+}
 
 impl FluentResource {
     pub fn try_new(source: String) -> Result<Self, (Self, Vec<ParserError>)> {
@@ -29,13 +32,16 @@ impl FluentResource {
         });
 
         if let Some(errors) = errors {
-            Err((Self(res), errors))
+            Err((Self::Sliced(res), errors))
         } else {
-            Ok(Self(res))
+            Ok(Self::Sliced(res))
         }
     }
 
     pub fn ast(&self) -> &ast::Resource<&str> {
-        self.0.all().ast
+        match self {
+            Self::Sliced(rental) => rental.all().ast,
+            Self::Owned(ast) => unreachable!(),
+        }
     }
 }

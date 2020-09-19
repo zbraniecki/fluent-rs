@@ -85,22 +85,22 @@ extern crate rental;
 use intl_memoizer::{IntlLangMemoizer, Memoizable};
 use unic_langid::LanguageIdentifier;
 
+mod args;
 mod bundle;
 pub mod concurrent;
 mod entry;
 mod errors;
 pub mod memoizer;
+mod message;
 pub mod resolver;
 mod resource;
 pub mod types;
-mod args;
-mod message;
 
+pub use args::FluentArgs;
 pub use errors::FluentError;
+pub use message::{FluentAttribute, FluentMessage};
 pub use resource::FluentResource;
 pub use types::FluentValue;
-pub use args::FluentArgs;
-pub use message::{FluentAttribute, FluentMessage};
 
 pub type FluentBundle<R> = bundle::FluentBundleBase<R, IntlLangMemoizer>;
 

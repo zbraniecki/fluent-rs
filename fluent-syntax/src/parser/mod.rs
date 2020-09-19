@@ -7,7 +7,7 @@ mod pattern;
 mod slice;
 
 use crate::ast;
-use slice::Slice;
+pub use slice::Slice;
 use std::result;
 
 pub use errors::{ErrorKind, ParserError};
