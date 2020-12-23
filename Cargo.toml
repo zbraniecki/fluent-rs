@@ -3,6 +3,7 @@ members = [
     "fluent-syntax",
     "fluent-bundle",
     "fluent-fallback",
+    "fluent-io",
     "fluent-resmgr",
     "fluent-pseudo",
     "fluent-testing",

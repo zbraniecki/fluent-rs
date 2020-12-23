@@ -1,8 +1,9 @@
 use std::fs;
 
 use fluent_bundle::{FluentBundle, FluentError, FluentResource};
-use fluent_fallback::{BundleGeneratorSync, SyncLocalization};
+use fluent_fallback::{generator::{FluentBundleResult, BundleGenerator, BundleIterator, BundleStream}, Localization};
 use unic_langid::{langid, LanguageIdentifier};
+use futures::Stream;
 
 struct Locales {
     locales: Vec<LanguageIdentifier>,
@@ -22,12 +23,15 @@ impl Locales {
 // lack of GATs, these have to own members instead of taking slices.
 struct BundleIter {
     locales: <Vec<LanguageIdentifier> as IntoIterator>::IntoIter,
-    resource_ids: Vec<String>,
+    res_ids: Vec<String>,
+}
+
+impl BundleIterator for BundleIter {
+    type Resource = FluentResource;
 }
 
 impl Iterator for BundleIter {
-    type Item =
-        Result<FluentBundle<FluentResource>, (FluentBundle<FluentResource>, Vec<FluentError>)>;
+    type Item = FluentBundleResult<FluentResource>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let locale = self.locales.next()?;
@@ -36,7 +40,7 @@ impl Iterator for BundleIter {
 
         let mut errors = vec![];
 
-        for res_id in &self.resource_ids {
+        for res_id in &self.res_ids {
             let full_path = format!("./tests/resources/{}/{}", locale, res_id);
             let source = fs::read_to_string(full_path).unwrap();
             let res = match FluentResource::try_new(source) {
@@ -56,15 +60,35 @@ impl Iterator for BundleIter {
     }
 }
 
-impl BundleGeneratorSync for Locales {
+impl BundleStream for BundleIter {
+    type Resource = FluentResource;
+}
+
+impl Stream for BundleIter {
+    type Item = FluentBundleResult<FluentResource>;
+
+    fn poll_next(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        todo!()
+    }
+}
+
+impl BundleGenerator for Locales {
     type Resource = FluentResource;
     type Iter = BundleIter;
+    type Stream = BundleIter;
 
-    fn bundles_sync(&self, resource_ids: Vec<String>) -> Self::Iter {
+    fn bundles_iter(&self, res_ids: Vec<String>) -> Self::Iter {
         BundleIter {
             locales: self.locales.clone().into_iter(),
-            resource_ids,
+            res_ids,
         }
+    }
+
+    fn bundles_stream(&self, res_ids: Vec<String>) -> Self::Stream {
+        todo!()
     }
 }
 
@@ -73,15 +97,16 @@ fn localization_format() {
     let resource_ids: Vec<String> = vec!["test.ftl".into(), "test2.ftl".into()];
     let locales = Locales::new(vec![langid!("pl"), langid!("en-US")]);
 
-    let loc = SyncLocalization::with_generator(resource_ids, locales);
+    let loc = Localization::with_generator(resource_ids, true, locales);
+    let mut errors = vec![];
 
-    let value = loc.format_value_sync("hello-world", None);
+    let value = loc.format_value_sync("hello-world", None, &mut errors);
     assert_eq!(value, "Hello World [pl]");
 
-    let value = loc.format_value_sync("missing-message", None);
+    let value = loc.format_value_sync("missing-message", None, &mut errors);
     assert_eq!(value, "missing-message");
 
-    let value = loc.format_value_sync("hello-world-3", None);
+    let value = loc.format_value_sync("hello-world-3", None, &mut errors);
     assert_eq!(value, "Hello World 3 [en]");
 }
 
@@ -90,15 +115,16 @@ fn localization_on_change() {
     let resource_ids: Vec<String> = vec!["test.ftl".into(), "test2.ftl".into()];
 
     let locales = Locales::new(vec![langid!("en-US")]);
+    let mut errors = vec![];
 
-    let mut loc = SyncLocalization::with_generator(resource_ids, locales);
+    let mut loc = Localization::with_generator(resource_ids, true, locales);
 
-    let value = loc.format_value_sync("hello-world", None);
+    let value = loc.format_value_sync("hello-world", None, &mut errors);
     assert_eq!(value, "Hello World [en]");
 
-    loc.insert(0, langid!("pl"));
+    // loc.insert(0, langid!("pl"));
     loc.on_change();
 
-    let value = loc.format_value_sync("hello-world", None);
+    let value = loc.format_value_sync("hello-world", None, &mut errors);
     assert_eq!(value, "Hello World [pl]");
 }

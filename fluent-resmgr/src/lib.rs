@@ -1,1 +1,6 @@
-pub mod resource_manager;
+mod errors;
+mod fetcher;
+pub mod manager;
+pub mod r#static;
+
+pub use manager::FluentResourceManager;

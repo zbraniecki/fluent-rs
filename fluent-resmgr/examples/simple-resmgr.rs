@@ -18,8 +18,9 @@
 //! If the second argument is omitted, `en-US` locale is used as the
 //! default one.
 use fluent_bundle::{FluentArgs, FluentValue};
+use fluent_fallback::generator::BundleGenerator;
 use fluent_langneg::{negotiate_languages, NegotiationStrategy};
-use fluent_resmgr::resource_manager::ResourceManager;
+use fluent_resmgr::FluentResourceManager;
 use std::env;
 use std::fs;
 use std::io;
@@ -58,8 +59,6 @@ fn main() {
     // 1. Get the command line arguments.
     let args: Vec<String> = env::args().collect();
 
-    let mgr = ResourceManager::new("./fluent-resmgr/examples/resources/{locale}/{res_id}".into());
-
     // 2. If the argument length is more than 1,
     //    take the second argument as a comma-separated
     //    list of requested locales.
@@ -79,11 +78,13 @@ fn main() {
         NegotiationStrategy::Filtering,
     );
 
-    // 5. Get a bundle for given paths and locales.
-    let bundle = mgr.get_bundle(
-        resolved_locales.into_iter().map(|s| s.to_owned()).collect(),
-        resources,
+    let mgr = FluentResourceManager::new(
+        "./fluent-resmgr/examples/resources/{locale}/{res_id}".into(),
+        resolved_locales.into_iter().map(|l| l.to_owned()).collect(),
     );
+
+    // 5. Get a bundle for given paths and locales.
+    let bundle = mgr.bundles_iter(resources).next().unwrap();
 
     // 6. Check if the input is provided.
     match args.get(1) {
