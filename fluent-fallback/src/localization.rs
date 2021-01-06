@@ -1,8 +1,8 @@
 use crate::cache::{AsyncCache, Cache};
 use crate::errors::LocalizationError;
-use crate::generator::BundleGenerator;
+use crate::generator::{BundleGenerator, BundleIterator};
 use crate::types::{L10nAttribute, L10nKey, L10nMessage};
-use fluent_bundle::{FluentArgs, FluentError};
+use fluent_bundle::{FluentArgs, FluentBundle, FluentError};
 use once_cell::sync::OnceCell;
 use std::borrow::Cow;
 
@@ -220,9 +220,13 @@ where
     ) -> Result<Cow<'l, str>, LocalizationError> {
         let mut format_errors = vec![];
         let result = match self.get_bundles() {
-            Bundles::Iter(cache) => {
-                Ok(Self::format_with_fallback_sync(cache, id, args, errors, &mut format_errors))
-            }
+            Bundles::Iter(cache) => Ok(Self::format_with_fallback_sync(
+                cache,
+                id,
+                args,
+                errors,
+                &mut format_errors,
+            )),
             Bundles::Stream(_) => Err(LocalizationError::SyncRequestInAsyncMode),
         };
         if !format_errors.is_empty() {
@@ -264,23 +268,66 @@ where
         errors: &mut Vec<LocalizationError>,
     ) -> Result<Vec<Option<L10nMessage<'l>>>, LocalizationError> {
         match self.get_bundles() {
-            Bundles::Iter(cache) => Ok(keys
-                .iter()
-                .map(|key| {
-                    let mut format_errors = vec![];
-                    let result = Self::format_message_with_fallback_sync(
-                        cache,
-                        &key.id,
-                        key.args.as_ref(),
-                        errors,
-                        &mut format_errors,
-                    );
-                    if !format_errors.is_empty() {
-                        errors.extend(format_errors.into_iter().map(|e| (&key.id, e).into()));
+            Bundles::Iter(cache) => {
+                let mut format_errors = vec![];
+                let mut result: Vec<Option<L10nMessage>> = Vec::with_capacity(keys.len());
+                for _ in 0..keys.len() {
+                    result.push(None);
+                }
+                for bundle in cache {
+                    let bundle = match bundle {
+                        Ok(bundle) => bundle,
+                        Err((bundle, err)) => {
+                            errors.extend(err.iter().cloned().map(Into::into));
+                            bundle
+                        }
+                    };
+                    for (idx, key) in keys.iter().enumerate() {
+                        if let Some(msg) = Self::format_message_from_bundle(
+                            bundle,
+                            &key.id,
+                            key.args.as_ref(),
+                            &mut format_errors,
+                        ) {
+                            result[idx] = Some(msg);
+                        }
                     }
-                    result
-                })
-                .collect::<Vec<_>>()),
+                }
+                Ok(result)
+
+                // for bundle in cache {
+                //     let bundle = match bundle {
+                //         Ok(bundle) => bundle,
+                //         Err((bundle, err)) => {
+                //             errors.extend(err.iter().cloned().map(Into::into));
+                //             bundle
+                //         }
+                //     };
+                //     if let Some(msg) = Self::format_message_from_bundle(bundle, id, args, format_errors) {
+                //         return Some(msg);
+                //     }
+                // }
+                // errors.push(LocalizationError::MissingMessage { id: id.to_string() });
+                // None
+            }
+
+            // Ok(keys
+            //     .iter()
+            //     .map(|key| {
+            //         let mut format_errors = vec![];
+            //         let result = Self::format_message_with_fallback_sync(
+            //             cache,
+            //             &key.id,
+            //             key.args.as_ref(),
+            //             errors,
+            //             &mut format_errors,
+            //         );
+            //         if !format_errors.is_empty() {
+            //             errors.extend(format_errors.into_iter().map(|e| (&key.id, e).into()));
+            //         }
+            //         result
+            //     })
+            //     .collect::<Vec<_>>()),
             Bundles::Stream(_) => Err(LocalizationError::SyncRequestInAsyncMode),
         }
     }
@@ -335,6 +382,33 @@ where
         id.into()
     }
 
+    fn format_message_from_bundle<'l>(
+        bundle: &'l FluentBundle<<<G as BundleGenerator>::Iter as BundleIterator>::Resource>,
+        id: &str,
+        args: Option<&'l FluentArgs>,
+        format_errors: &mut Vec<FluentError>,
+    ) -> Option<L10nMessage<'l>> {
+        if let Some(msg) = bundle.get_message(id) {
+            let value = msg
+                .value
+                .map(|pattern| bundle.format_pattern(pattern, args, format_errors));
+            let attributes = msg
+                .attributes
+                .iter()
+                .map(|attr| {
+                    let value = bundle.format_pattern(attr.value, args, format_errors);
+                    L10nAttribute {
+                        name: attr.id.into(),
+                        value,
+                    }
+                })
+                .collect();
+            Some(L10nMessage { value, attributes })
+        } else {
+            None
+        }
+    }
+
     fn format_message_with_fallback_sync<'l>(
         cache: &'l Cache<G::Iter>,
         id: &'l str,
@@ -353,22 +427,8 @@ where
                     bundle
                 }
             };
-            if let Some(msg) = bundle.get_message(id) {
-                let value = msg
-                    .value
-                    .map(|pattern| bundle.format_pattern(pattern, args, format_errors));
-                let attributes = msg
-                    .attributes
-                    .iter()
-                    .map(|attr| {
-                        let value = bundle.format_pattern(attr.value, args, format_errors);
-                        L10nAttribute {
-                            name: attr.id.into(),
-                            value,
-                        }
-                    })
-                    .collect();
-                return Some(L10nMessage { value, attributes });
+            if let Some(msg) = Self::format_message_from_bundle(bundle, id, args, format_errors) {
+                return Some(msg);
             }
         }
         errors.push(LocalizationError::MissingMessage { id: id.to_string() });
