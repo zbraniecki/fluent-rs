@@ -6,13 +6,15 @@ use crate::types::{L10nAttribute, L10nKey, L10nMessage};
 use fluent_bundle::{FluentArgs, FluentBundle, FluentError};
 use once_cell::sync::OnceCell;
 use std::borrow::Cow;
+use std::rc::Rc;
+use std::cell::{RefCell, Ref};
 
 enum Bundles<G>
 where
     G: BundleGenerator,
 {
     Iter(Cache<G::Iter, G::Resource>),
-    Stream(AsyncCache<G::Stream, G::Resource>),
+    Stream(Rc<AsyncCache<G::Stream, G::Resource>>),
 }
 
 impl<G> Bundles<G>
@@ -43,18 +45,23 @@ where
     }
 }
 
+struct State<G>
+where G: BundleGenerator {
+    // Replace with `OneCell` once it stabilizes
+    // https://github.com/rust-lang/rust/issues/74465
+    bundles: OnceCell<Rc<Bundles<G>>>,
+    res_ids: Vec<String>,
+    sync: bool,
+}
+
 pub struct Localization<G, P>
 where
     G: BundleGenerator<LocalesIter = P::Iter>,
     P: LocalesProvider,
 {
-    // Replace with `OneCell` once it stabilizes
-    // https://github.com/rust-lang/rust/issues/74465
-    bundles: OnceCell<Bundles<G>>,
     generator: G,
     provider: P,
-    res_ids: Vec<String>,
-    sync: bool,
+    state: RefCell<State<G>>,
 }
 
 impl<G, P> Localization<G, P>
@@ -64,11 +71,13 @@ where
 {
     pub fn new(res_ids: Vec<String>, sync: bool) -> Self {
         Self {
-            bundles: OnceCell::new(),
             generator: G::default(),
             provider: P::default(),
-            res_ids,
-            sync,
+            state: RefCell::new(State {
+                bundles: OnceCell::new(),
+                res_ids,
+                sync,
+            }),
         }
     }
 }
@@ -80,49 +89,53 @@ where
 {
     pub fn with_env(res_ids: Vec<String>, sync: bool, provider: P, generator: G) -> Self {
         Self {
-            bundles: OnceCell::new(),
             generator,
             provider,
-            res_ids,
-            sync,
+            state: RefCell::new(State {
+                bundles: OnceCell::new(),
+                res_ids,
+                sync,
+            }),
         }
     }
 
     pub fn is_sync(&self) -> bool {
-        self.sync
+        self.state.borrow().sync
     }
 
     pub fn add_resource_id(&mut self, res_id: String) {
-        self.res_ids.push(res_id);
+        self.state.borrow_mut().res_ids.push(res_id);
         self.on_change();
     }
 
     pub fn add_resource_ids(&mut self, res_ids: Vec<String>) {
-        self.res_ids.extend(res_ids);
-        self.on_change();
+        // self.res_ids.extend(res_ids);
+        // self.on_change();
     }
 
     pub fn remove_resource_id(&mut self, res_id: String) -> usize {
-        self.res_ids.retain(|x| *x != res_id);
-        self.on_change();
-        self.res_ids.len()
+        // self.res_ids.retain(|x| *x != res_id);
+        // self.on_change();
+        // self.res_ids.len()
+        0
     }
 
     pub fn remove_resource_ids(&mut self, res_ids: Vec<String>) -> usize {
-        self.res_ids.retain(|x| !res_ids.contains(x));
-        self.on_change();
-        self.res_ids.len()
+        // self.res_ids.retain(|x| !res_ids.contains(x));
+        // self.on_change();
+        // self.res_ids.len()
+        0
     }
 
     pub fn set_async(&mut self) {
-        if self.sync {
-            self.bundles.take();
-            self.sync = false;
-        }
+        // if self.sync {
+        //     self.bundles.take();
+        //     self.sync = false;
+        // }
     }
 
     pub fn on_change(&mut self) {
-        self.bundles.take();
+        // self.borrow().bundles.take();
     }
 
     pub async fn format_value<'l>(
@@ -131,12 +144,13 @@ where
         args: Option<&'l FluentArgs<'_>>,
         errors: &mut Vec<LocalizationError>,
     ) -> Option<Cow<'l, str>> {
-        match self.get_bundles() {
-            Bundles::Iter(cache) => Self::format_value_from_iter(cache, id, args, errors),
-            Bundles::Stream(stream) => {
-                Self::format_value_from_stream(stream, id, args, errors).await
-            }
-        }
+        // match self.get_bundles() {
+        //     Bundles::Iter(cache) => Self::format_value_from_iter(cache, id, args, errors),
+        //     Bundles::Stream(stream) => {
+        //         Self::format_value_from_stream(&stream.clone(), id, args, errors).await
+        //     }
+        // }
+        panic!();
     }
 
     pub async fn format_values<'l>(
@@ -144,10 +158,11 @@ where
         keys: &'l [L10nKey<'l>],
         errors: &mut Vec<LocalizationError>,
     ) -> Vec<Option<Cow<'l, str>>> {
-        match self.get_bundles() {
-            Bundles::Iter(cache) => Self::format_values_from_iter(cache, keys, errors),
-            Bundles::Stream(stream) => Self::format_values_from_stream(stream, keys, errors).await,
-        }
+        // match self.get_bundles() {
+        //     Bundles::Iter(cache) => Self::format_values_from_iter(cache, keys, errors),
+        //     Bundles::Stream(stream) => Self::format_values_from_stream(stream, keys, errors).await,
+        // }
+        panic!();
     }
 
     pub async fn format_messages<'l>(
@@ -155,12 +170,13 @@ where
         keys: &'l [L10nKey<'l>],
         errors: &mut Vec<LocalizationError>,
     ) -> Vec<Option<L10nMessage<'l>>> {
-        match self.get_bundles() {
-            Bundles::Iter(cache) => Self::format_messages_from_iter(cache, keys, errors),
-            Bundles::Stream(stream) => {
-                Self::format_messages_from_stream(stream, keys, errors).await
-            }
-        }
+        // match self.get_bundles() {
+        //     Bundles::Iter(cache) => Self::format_messages_from_iter(cache, keys, errors),
+        //     Bundles::Stream(stream) => {
+        //         Self::format_messages_from_stream(stream, keys, errors).await
+        //     }
+        // }
+        panic!();
     }
 
     pub fn format_value_sync<'l>(
@@ -180,10 +196,11 @@ where
         keys: &'l [L10nKey<'l>],
         errors: &mut Vec<LocalizationError>,
     ) -> Result<Vec<Option<Cow<'l, str>>>, LocalizationError> {
-        match self.get_bundles() {
-            Bundles::Iter(cache) => Ok(Self::format_values_from_iter(cache, keys, errors)),
-            Bundles::Stream(_) => Err(LocalizationError::SyncRequestInAsyncMode),
-        }
+        // match self.get_bundles() {
+        //     Bundles::Iter(cache) => Ok(Self::format_values_from_iter(cache, keys, errors)),
+        //     Bundles::Stream(_) => Err(LocalizationError::SyncRequestInAsyncMode),
+        // }
+        panic!();
     }
 
     pub fn format_messages_sync<'l>(
@@ -191,10 +208,11 @@ where
         keys: &'l [L10nKey<'l>],
         errors: &mut Vec<LocalizationError>,
     ) -> Result<Vec<Option<L10nMessage<'l>>>, LocalizationError> {
-        match self.get_bundles() {
-            Bundles::Iter(cache) => Ok(Self::format_messages_from_iter(cache, keys, errors)),
-            Bundles::Stream(_) => Err(LocalizationError::SyncRequestInAsyncMode),
-        }
+        // match self.get_bundles() {
+        //     Bundles::Iter(cache) => Ok(Self::format_messages_from_iter(cache, keys, errors)),
+        //     Bundles::Stream(_) => Err(LocalizationError::SyncRequestInAsyncMode),
+        // }
+        panic!();
     }
 }
 
@@ -205,8 +223,9 @@ where
     P: LocalesProvider,
 {
     pub fn prefetch_sync(&self) {
-        let bundles = self.get_bundles();
-        bundles.prefetch_sync();
+        panic!();
+        // let bundles = self.get_bundles();
+        // bundles.prefetch_sync();
     }
 }
 
@@ -217,8 +236,9 @@ where
     P: LocalesProvider,
 {
     pub async fn prefetch_async(&self) {
-        let bundles = self.get_bundles();
-        bundles.prefetch_async().await
+        panic!();
+        // let bundles = self.get_bundles();
+        // bundles.prefetch_async().await
     }
 }
 
@@ -228,19 +248,20 @@ where
     P: LocalesProvider,
 {
     fn get_bundles(&self) -> &Bundles<G> {
-        self.bundles.get_or_init(|| {
-            if self.sync {
-                Bundles::Iter(Cache::new(
-                    self.generator
-                        .bundles_iter(self.provider.locales(), self.res_ids.clone()),
-                ))
-            } else {
-                Bundles::Stream(AsyncCache::new(
-                    self.generator
-                        .bundles_stream(self.provider.locales(), self.res_ids.clone()),
-                ))
-            }
-        })
+        panic!();
+        // self.bundles.get_or_init(|| {
+        //     Rc::new(if self.sync {
+        //         Bundles::Iter(Cache::new(
+        //             self.generator
+        //                 .bundles_iter(self.provider.locales(), self.res_ids.clone()),
+        //         ))
+        //     } else {
+        //         Bundles::Stream(AsyncCache::new(
+        //             self.generator
+        //                 .bundles_stream(self.provider.locales(), self.res_ids.clone()),
+        //         ))
+        //     })
+        // })
     }
 
     fn format_message_from_bundle<'l>(
