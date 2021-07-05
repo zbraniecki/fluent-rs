@@ -94,8 +94,10 @@ pub mod env;
 mod errors;
 pub mod generator;
 mod localization;
+pub mod localization2;
 mod pin_cell;
 pub mod types;
 
 pub use errors::LocalizationError;
 pub use localization::Localization;
+pub use localization2::Localization2;

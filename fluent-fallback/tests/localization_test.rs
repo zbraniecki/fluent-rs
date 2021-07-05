@@ -485,7 +485,7 @@ async fn localization_add_resources_during_async_format() {
     }];
 
     let future = loc.format_messages(&keys, &mut errors);
-    loc.add_resource_id("test3.ftl".to_string());
+    loc.add_resource_id("test.ftl".to_string());
     let msgs = future.await;
     assert_eq!(
         msgs.get(0).unwrap().as_ref().unwrap().value,
