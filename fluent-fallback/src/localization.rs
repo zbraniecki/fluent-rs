@@ -7,7 +7,7 @@ use fluent_bundle::{FluentArgs, FluentBundle, FluentError};
 use once_cell::sync::OnceCell;
 use std::borrow::Cow;
 
-enum Bundles<G>
+pub enum Bundles<G>
 where
     G: BundleGenerator,
 {
