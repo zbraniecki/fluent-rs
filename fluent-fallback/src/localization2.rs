@@ -1,62 +1,55 @@
 use crate::cache::{AsyncCache, Cache};
-use crate::generator::{BundleGenerator, FluentBundleResult};
-use fluent_bundle::{FluentBundle, FluentResource};
-use futures::{ready, Stream};
+use crate::env::LocalesProvider;
+use crate::generator::BundleGenerator;
 use once_cell::sync::OnceCell;
 use std::borrow::Cow;
 use std::future::Future;
 use std::rc::Rc;
-use unic_langid::LanguageIdentifier;
 
-pub struct InnerResMgr {
-    pub resources: Vec<(String, Rc<FluentResource>)>,
+pub enum Bundles<G>
+where
+    G: BundleGenerator,
+{
+    Iter(Rc<Cache<G::Iter, G::Resource>>),
+    Stream(Rc<AsyncCache<G::Stream, G::Resource>>),
 }
 
-#[derive(Clone)]
-pub struct ResourceManager {
-    pub inner: Rc<InnerResMgr>,
-}
-
-impl ResourceManager {
-    pub fn get_resource(&self, id: &str) -> Option<Rc<FluentResource>> {
-        self.inner
-            .resources
-            .iter()
-            .find(|r| r.0 == id)
-            .map(|(_, res)| res.clone())
+impl<S> Clone for Bundles<S>
+where
+    S: BundleGenerator,
+{
+    fn clone(&self) -> Self {
+        match self {
+            Bundles::Iter(i) => Self::Iter(i.clone()),
+            Bundles::Stream(s) => Self::Stream(s.clone()),
+        }
     }
 }
 
-#[derive(Clone)]
-pub enum Bundles<S>
+pub struct Localization2<G, P>
 where
-    S: StreamProvider,
+    G: BundleGenerator<LocalesIter = P::Iter>,
+    P: LocalesProvider,
 {
-    Iter(Rc<Cache<S::BundlesIter, Rc<FluentResource>>>),
-    Stream(Rc<AsyncCache<S::BundlesStream, Rc<FluentResource>>>),
-}
-
-pub struct Localization2<S>
-where
-    S: StreamProvider,
-{
-    bundles: OnceCell<Bundles<S>>,
-    locales: Vec<LanguageIdentifier>,
-    provider: S,
+    bundles: OnceCell<Bundles<G>>,
+    generator: G,
+    provider: P,
     res_ids: Vec<String>,
+    sync: bool,
 }
 
-impl<S> Localization2<S>
+impl<G, P> Localization2<G, P>
 where
-    S: StreamProvider,
+    G: BundleGenerator<LocalesIter = P::Iter>,
+    P: LocalesProvider,
 {
-    pub fn new(res_ids: Vec<String>, provider: S) -> Self {
-        let locales = vec!["en".parse().unwrap()];
+    pub fn with_env(res_ids: Vec<String>, sync: bool, provider: P, generator: G) -> Self {
         Self {
             bundles: OnceCell::new(),
+            generator,
             provider,
-            locales,
             res_ids,
+            sync,
         }
     }
 
@@ -65,125 +58,55 @@ where
         self.bundles.take();
     }
 
-    pub fn remove_resource_id(&mut self, res_id: &str) {
-        self.res_ids.retain(|res| res != res_id);
+    pub fn remove_resource_id(&mut self, res_id: String) {
+        self.res_ids.retain(|res| res != &res_id);
         self.bundles.take();
     }
 
-    pub fn format_value<'l>(&self, _id: &str) -> impl Future<Output = Option<Cow<'l, str>>>
+    pub fn format_value<'l>(
+        &self,
+        _id: &str,
+        _args: Option<()>,
+        _errors: &mut Vec<()>,
+    ) -> impl Future<Output = Option<Cow<'l, str>>>
     where
-        <S as StreamProvider>::BundlesStream: Unpin,
+        <G as BundleGenerator>::Stream: Unpin,
     {
-        let bundles: &Bundles<_> = self.get_bundles();
-        let bundles = if let Bundles::Stream(stream) = bundles {
-            stream.clone()
-        } else {
-            panic!();
-        };
+        let bundles = self.get_bundles().clone();
         async move {
             use futures::StreamExt;
-            let mut bundles = bundles.stream();
-            while let Some(_bundle) = bundles.next().await {
-                println!("Next bundle!");
+            match bundles {
+                Bundles::Iter(iter) => {
+                    let mut iter = iter.into_iter();
+                    while let Some(_bundle) = iter.next() {
+                        println!("Next bundle sync!");
+                    }
+                    None
+                }
+                Bundles::Stream(stream) => {
+                    let mut bundles = stream.stream();
+                    while let Some(_bundle) = bundles.next().await {
+                        println!("Next bundle async!");
+                    }
+                    None
+                }
             }
-            None
-            // match bundles {
-            //     Bundles::Iter(_) => { None },
-            //     Bundles::Stream(_) => {
-            //         // let mut bundles = stream.stream();
-            //         // while let Some(_bundle) = bundles.next().await {
-            //         //     println!("Next bundle!");
-            //         // }
-            //         None
-            //     }
-            // }
         }
     }
 
-    fn get_bundles(&self) -> &Bundles<S> {
+    fn get_bundles(&self) -> &Bundles<G> {
         self.bundles.get_or_init(|| {
-            Bundles::Stream(Rc::new(AsyncCache::new(self.provider.bundles_stream(
-                self.locales.clone().into_iter(),
-                self.res_ids.clone(),
-            ))))
-        })
-    }
-}
-
-pub trait StreamProvider {
-    type BundlesStream: Stream<Item = FluentBundleResult<Rc<FluentResource>>> + Clone;
-    type BundlesIter: Iterator<Item = FluentBundleResult<Rc<FluentResource>>> + Clone;
-
-    fn bundles_stream(
-        &self,
-        locales: <Vec<LanguageIdentifier> as IntoIterator>::IntoIter,
-        res_ids: Vec<String>,
-    ) -> Self::BundlesStream;
-}
-
-impl StreamProvider for ResourceManager {
-    type BundlesStream = BundleStream;
-    type BundlesIter = BundleIter;
-
-    fn bundles_stream(
-        &self,
-        locales: <Vec<LanguageIdentifier> as IntoIterator>::IntoIter,
-        res_ids: Vec<String>,
-    ) -> Self::BundlesStream {
-        BundleStream {
-            res_ids,
-            locales,
-            res_mgr: self.clone(),
-        }
-    }
-}
-
-#[derive(Clone)]
-pub struct BundleStream {
-    res_ids: Vec<String>,
-    locales: <Vec<LanguageIdentifier> as IntoIterator>::IntoIter,
-    res_mgr: ResourceManager,
-}
-
-impl Stream for BundleStream {
-    type Item = FluentBundleResult<Rc<FluentResource>>;
-
-    fn poll_next(
-        mut self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Option<Self::Item>> {
-        println!("res_ids: {:?}", self.res_ids);
-        if let Some(locale) = self.locales.next() {
-            let mut bundle: FluentBundle<Rc<FluentResource>> = FluentBundle::new(vec![locale]);
-            for id in &self.res_ids {
-                let res = self.res_mgr.get_resource(id).unwrap();
-                bundle.add_resource(res).unwrap();
+            if self.sync {
+                Bundles::Iter(Rc::new(Cache::new(
+                    self.generator
+                        .bundles_iter(self.provider.locales(), self.res_ids.clone()),
+                )))
+            } else {
+                Bundles::Stream(Rc::new(AsyncCache::new(
+                    self.generator
+                        .bundles_stream(self.provider.locales(), self.res_ids.clone()),
+                )))
             }
-            Some(Ok(bundle)).into()
-        } else {
-            None.into()
-        }
-    }
-}
-
-#[derive(Clone)]
-pub struct BundleIter {
-    res_ids: Vec<String>,
-    locales: <Vec<LanguageIdentifier> as IntoIterator>::IntoIter,
-    res_mgr: ResourceManager,
-}
-
-impl Iterator for BundleIter {
-    type Item = FluentBundleResult<Rc<FluentResource>>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let locale = self.locales.next()?;
-
-        let mut bundle: FluentBundle<Rc<FluentResource>> = FluentBundle::new(vec![locale]);
-        for id in &self.res_ids {
-            let res = self.res_mgr.get_resource(id).unwrap();
-            bundle.add_resource(res).unwrap();
-        }
-        Some(Ok(bundle))
+        })
     }
 }
